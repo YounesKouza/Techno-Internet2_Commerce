@@ -1,42 +1,55 @@
 <?php
-session_start();
-include('./admin/src/php/utils/header.php');
-include('./admin/src/php/utils/all_includes.php');
-?>
+/**
+ * Point d'entrée principal de la partie publique du site
+ */
 
-<!doctype html>
-<html>
-<head>
-    <title><?php print $title; ?></title>
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-QWTKZyjpPEjISv5WaRU9OFeRpok6YctnYmDr5pNlyT2bRjXh0JMhjY6hW+ALEwIH" crossorigin="anonymous">
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js" integrity="sha384-YvpcrYf0tY3lHB60NNkmXc5s9fDVZLESaAA55NDzOxhy9GkcIdslK1eN7N6jIeHz" crossorigin="anonymous"></script>
-</head>
+// Inclusion centrale (Chemin relatif depuis la racine du projet)
+require_once __DIR__ . '/admin/src/php/utils/all_includes.php';
 
-<body>
-<div id="page" class="container">
-    <header class="img_header"></header>
-    <section id=" ">
-        <nav>
-            <?php if(file_exists('admin/src/php/utils/public_menu.php')){
-                include('admin/src/php/utils/public_menu.php');
-            }
-            ?>
-        </nav>
-    </section>
-    <section id="contenu">
-        <div class="container">
-            <?php
-            include('./content/'.$page);
-            ?>
-        </div>
-    </section>
+// Initialiser la connexion PDO pour qu'elle soit disponible globalement
+$pdo = getPDO();
 
-</div>
-<footer class="footer mt-auto py-3 bg-light">
-    <div class="container">
-        <span class="text-muted">Mission 2025</span>
-    </div>
-</footer>
-</body>
-</html>
+// Détermination de la page à afficher
+$page = $_GET['page'] ?? 'accueil'; // Page par défaut: accueil
 
+// Liste blanche des pages autorisées
+$allowed_pages = [
+    'accueil', 'catalogue', 'produit_details', 
+    'panier', 'commande', 'commande_succes',
+    'login', 'inscription', 'deconnexion',
+    'compte' // Ajouter d'autres pages publiques ici
+];
+
+// Chemin de base pour les pages
+$base_path = __DIR__ . '/pages/'; // Assumant que les pages publiques sont dans /pages/
+
+// Vérification si la page demandée est autorisée et si le fichier existe
+if (in_array($page, $allowed_pages) && file_exists($base_path . $page . '.php')) {
+    $page_file = $base_path . $page . '.php';
+} else {
+    // Page non trouvée ou non autorisée
+    $page = '404';
+    // Chemin vers la page 404 (à ajuster si elle est ailleurs)
+    $page_404_path = __DIR__ . '/content/page_404.php'; 
+    if (!file_exists($page_404_path)) {
+        // Fallback très simple si page_404.php n'existe pas
+        die('Erreur 404 : Page non trouvée.'); 
+    }
+    $page_file = $page_404_path;
+    http_response_code(404);
+}
+
+// Inclusion de l'en-tête commun
+require_once __DIR__ . '/admin/src/php/utils/header.php';
+// Appel de la fonction generate_header avec la page active
+generate_header($page, $titre_page ?? null);
+
+// Inclusion du contenu de la page spécifique
+include $page_file;
+
+// Inclusion du pied de page commun
+require_once __DIR__ . '/admin/src/php/utils/footer.php'; 
+// Appel de la fonction generate_footer
+generate_footer();
+
+?> 

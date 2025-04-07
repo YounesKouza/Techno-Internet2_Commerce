@@ -1,0 +1,15 @@
+[2025-03-27 18:56:10] Requête reçue: {"product_id":"5","quantity":"1"}
+[2025-03-27 18:56:10] Erreur d'inclusion: Le fichier de connexion n'existe pas: C:\Users\saidk\Desktop\INFORMATIQUE DE GESTION\Bac 2 Mons\Techno Internet 2\xampp\htdocs\Exos\Techno-internet2_commerce\admin\src\php\ajax/../../utils/connexion.php
+[2025-03-27 18:56:10] Exception: Le fichier de connexion n'existe pas: C:\Users\saidk\Desktop\INFORMATIQUE DE GESTION\Bac 2 Mons\Techno Internet 2\xampp\htdocs\Exos\Techno-internet2_commerce\admin\src\php\ajax/../../utils/connexion.php dans C:\Users\saidk\Desktop\INFORMATIQUE DE GESTION\Bac 2 Mons\Techno Internet 2\xampp\htdocs\Exos\Techno-internet2_commerce\admin\src\php\ajax\add_to_cart.php ligne 56
+[2025-03-27 19:01:16] Requête reçue: {"product_id":"5","quantity":"1"}
+[2025-03-27 19:01:16] Produit ajouté avec succès - product_id: 5, quantity: 1
+[2025-04-01 14:35:51] Requête reçue: {"product_id":"12","quantity":"1"}
+[2025-04-01 14:35:51] Produit ajouté avec succès - product_id: 12, quantity: 1
+[2025-04-01 15:04:22] Requête reçue: {"product_id":"22","quantity":"1"}
+[2025-04-01 15:04:22] Produit ajouté avec succès - product_id: 22, quantity: 1
+[2025-04-01 15:04:31] Requête reçue: {"product_id":"12","quantity":"1"}
+[2025-04-01 15:04:31] Produit ajouté avec succès - product_id: 12, quantity: 1
+[2025-04-01 15:05:21] Requête reçue: {"product_id":"25","quantity":"1"}
+[2025-04-01 15:05:21] Produit ajouté avec succès - product_id: 25, quantity: 1
+[2025-04-01 15:09:03] Nouveau produit ajouté: product_id: 25 - Session ID: g15er9g47l7u53pqqg3pm4cje5 - Panier: {"25":{"quantity":1}}
+[2025-04-01 15:22:55] Nouveau produit ajouté: product_id: 25 - Session ID: sdm5ab0mjbtq4jlj3nl1knhh38 - Panier: {"25":{"quantity":1}}
