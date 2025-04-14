@@ -16,6 +16,7 @@ if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'admin') {
 // Inclusion des fichiers nécessaires
 require_once '../src/php/utils/connexion.php';
 require_once '../src/php/utils/sidebar.php';
+require_once '../src/php/utils/all_includes.php';
 
 // Initialisation des variables
 $pdo = getPDO();
@@ -23,6 +24,10 @@ $error = "";
 $success = "";
 $category_detail = null;
 $edit_mode = false;
+
+// Initialisation des objets DAO
+$categoryDAO = new CategoryDAO($pdo);
+$productDAO = new ProductDAO($pdo);
 
 // Traitement des actions
 if (isset($_GET['action'])) {
@@ -41,21 +46,26 @@ if (isset($_GET['action'])) {
                 } else {
                     try {
                         // Vérification si une catégorie avec ce nom existe déjà
-                        $stmt = $pdo->prepare("SELECT COUNT(*) FROM categories WHERE nom = ?");
-                        $stmt->execute([$nom]);
-                        if ($stmt->fetchColumn() > 0) {
+                        if ($categoryDAO->categoryExistsByName($nom)) {
                             $error = "Une catégorie avec ce nom existe déjà";
                         } else {
-                            // Ajout de la catégorie
-                            $stmt = $pdo->prepare("INSERT INTO categories (nom, description) VALUES (?, ?)");
-                            $stmt->execute([$nom, $description]);
+                            // Ajout de la catégorie via le DAO
+                            $categoryData = [
+                                'nom' => $nom,
+                                'description' => $description
+                            ];
+                            $result = $categoryDAO->create($categoryData);
                             
-                            $success = "La catégorie a été ajoutée avec succès";
-                            // Réinitialisation du formulaire
-                            $nom = '';
-                            $description = '';
+                            if ($result) {
+                                $success = "La catégorie a été ajoutée avec succès";
+                                // Réinitialisation du formulaire
+                                $nom = '';
+                                $description = '';
+                            } else {
+                                $error = "Erreur lors de l'ajout de la catégorie";
+                            }
                         }
-                    } catch (PDOException $e) {
+                    } catch (Exception $e) {
                         $error = "Erreur lors de l'ajout de la catégorie : " . $e->getMessage();
                     }
                 }
@@ -70,12 +80,10 @@ if (isset($_GET['action'])) {
                 $error = "ID de catégorie invalide";
             } else {
                 try {
-                    // Récupération de la catégorie
-                    $stmt = $pdo->prepare("SELECT * FROM categories WHERE id = ?");
-                    $stmt->execute([$category_id]);
-                    $category_detail = $stmt->fetch();
+                    // Récupération de la catégorie via le DAO
+                    $category = $categoryDAO->findById($category_id);
                     
-                    if (!$category_detail) {
+                    if (!$category) {
                         $error = "La catégorie n'a pas été trouvée";
                     } elseif ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         // Récupération des données du formulaire
@@ -86,27 +94,35 @@ if (isset($_GET['action'])) {
                         if (empty($nom)) {
                             $error = "Le nom de la catégorie est obligatoire";
                         } else {
-                            // Vérification si une catégorie avec ce nom existe déjà (hors celle qu'on édite)
-                            $stmt = $pdo->prepare("SELECT COUNT(*) FROM categories WHERE nom = ? AND id != ?");
-                            $stmt->execute([$nom, $category_id]);
-                            if ($stmt->fetchColumn() > 0) {
-                                $error = "Une catégorie avec ce nom existe déjà";
+                            // Vérification si une catégorie avec ce nom existe déjà (sauf la catégorie actuelle)
+                            if ($categoryDAO->categoryExistsByNameExcept($nom, $category_id)) {
+                                $error = "Une autre catégorie avec ce nom existe déjà";
                             } else {
-                                // Mise à jour de la catégorie
-                                $stmt = $pdo->prepare("UPDATE categories SET nom = ?, description = ? WHERE id = ?");
-                                $stmt->execute([$nom, $description, $category_id]);
+                                // Mise à jour de la catégorie via le DAO
+                                $categoryData = [
+                                    'id' => $category_id,
+                                    'nom' => $nom,
+                                    'description' => $description
+                                ];
+                                $result = $categoryDAO->update($categoryData);
                                 
-                                $success = "La catégorie a été mise à jour avec succès";
-                                
-                                // Récupération des données mises à jour
-                                $stmt = $pdo->prepare("SELECT * FROM categories WHERE id = ?");
-                                $stmt->execute([$category_id]);
-                                $category_detail = $stmt->fetch();
+                                if ($result) {
+                                    $success = "La catégorie a été mise à jour avec succès";
+                                    // Récupération de la catégorie mise à jour
+                                    $category = $categoryDAO->findById($category_id);
+                                    // Assigner la catégorie mise à jour à $category_detail pour le formulaire
+                                    $category_detail = $category;
+                                } else {
+                                    $error = "Erreur lors de la mise à jour de la catégorie";
+                                }
                             }
                         }
+                    } else {
+                        // Affichage du formulaire avec les données de la catégorie
+                        $category_detail = $category;
                     }
-                } catch (PDOException $e) {
-                    $error = "Erreur lors de la récupération ou la mise à jour de la catégorie : " . $e->getMessage();
+                } catch (Exception $e) {
+                    $error = "Erreur lors de la récupération/modification de la catégorie : " . $e->getMessage();
                 }
             }
             break;
@@ -119,26 +135,26 @@ if (isset($_GET['action'])) {
             } else {
                 try {
                     // Vérification si des produits utilisent cette catégorie
-                    $stmt = $pdo->prepare("SELECT COUNT(*) FROM products WHERE categorie_id = ?");
-                    $stmt->execute([$category_id]);
-                    $product_count = $stmt->fetchColumn();
+                    $product_count = $productDAO->countByCategory($category_id);
                     
                     if ($product_count > 0 && !isset($_GET['force'])) {
                         $error = "Cette catégorie est utilisée par $product_count produit(s). Utilisez la suppression forcée pour définir la catégorie à NULL pour ces produits et supprimer la catégorie.";
                     } else {
                         // Si suppression forcée, mettre à NULL la categorie_id des produits
                         if ($product_count > 0) {
-                            $stmt = $pdo->prepare("UPDATE products SET categorie_id = NULL WHERE categorie_id = ?");
-                            $stmt->execute([$category_id]);
+                            $productDAO->clearCategoryForProducts($category_id);
                         }
                         
-                        // Suppression de la catégorie
-                        $stmt = $pdo->prepare("DELETE FROM categories WHERE id = ?");
-                        $stmt->execute([$category_id]);
+                        // Suppression de la catégorie via le DAO
+                        $result = $categoryDAO->delete($category_id);
                         
-                        $success = "La catégorie a été supprimée avec succès" . ($product_count > 0 ? " ($product_count produits ont été mis à jour)" : "");
+                        if ($result) {
+                            $success = "La catégorie a été supprimée avec succès" . ($product_count > 0 ? " ($product_count produits ont été mis à jour)" : "");
+                        } else {
+                            $error = "Erreur lors de la suppression de la catégorie";
+                        }
                     }
-                } catch (PDOException $e) {
+                } catch (Exception $e) {
                     $error = "Erreur lors de la suppression de la catégorie : " . $e->getMessage();
                 }
             }
@@ -146,16 +162,10 @@ if (isset($_GET['action'])) {
     }
 }
 
-// Récupération de toutes les catégories
+// Récupération de toutes les catégories avec le nombre de produits associés
 try {
-    $categories = $pdo->query("
-        SELECT c.*, COUNT(p.id) as product_count 
-        FROM categories c
-        LEFT JOIN products p ON c.id = p.categorie_id
-        GROUP BY c.id
-        ORDER BY c.nom ASC
-    ")->fetchAll();
-} catch (PDOException $e) {
+    $categories = $categoryDAO->findAllWithProductCount();
+} catch (Exception $e) {
     $error = "Erreur lors de la récupération des catégories : " . $e->getMessage();
     $categories = [];
 }
@@ -221,15 +231,15 @@ try {
                                 </h5>
                             </div>
                             <div class="card-body">
-                                <form action="gestion_categories.php?action=<?= $edit_mode ? 'edit&id=' . $category_detail['id'] : 'add' ?>" method="post">
+                                <form action="gestion_categories.php?action=<?= $edit_mode ? 'edit&id=' . $category_detail->id : 'add' ?>" method="post">
                                     <div class="mb-3">
                                         <label for="nom" class="form-label">Nom <span class="text-danger">*</span></label>
-                                        <input type="text" class="form-control" id="nom" name="nom" value="<?= $edit_mode ? htmlspecialchars($category_detail['nom']) : '' ?>" required>
+                                        <input type="text" class="form-control" id="nom" name="nom" value="<?= $edit_mode ? htmlspecialchars($category_detail->nom) : '' ?>" required>
                                     </div>
                                     
                                     <div class="mb-3">
                                         <label for="description" class="form-label">Description</label>
-                                        <textarea class="form-control" id="description" name="description" rows="3"><?= $edit_mode ? htmlspecialchars($category_detail['description']) : '' ?></textarea>
+                                        <textarea class="form-control" id="description" name="description" rows="3"><?= $edit_mode ? htmlspecialchars($category_detail->description) : '' ?></textarea>
                                     </div>
                                     
                                     <div class="d-flex justify-content-between">
@@ -279,49 +289,57 @@ try {
                                             <?php else: ?>
                                                 <?php foreach ($categories as $category): ?>
                                                     <tr>
-                                                        <td><?= $category['id'] ?></td>
-                                                        <td><?= htmlspecialchars($category['nom']) ?></td>
-                                                        <td><?= !empty($category['description']) ? htmlspecialchars(substr($category['description'], 0, 50) . (strlen($category['description']) > 50 ? '...' : '')) : '<em class="text-muted">Non renseignée</em>' ?></td>
+                                                        <td><?= $category->id ?></td>
+                                                        <td><?= htmlspecialchars($category->nom) ?></td>
                                                         <td>
-                                                            <?php if ($category['product_count'] > 0): ?>
-                                                                <a href="gestion_meubles.php?category=<?= $category['id'] ?>" class="text-decoration-none">
-                                                                    <?= $category['product_count'] ?> produit(s)
+                                                            <?php
+                                                            // Afficher la description de la catégorie
+                                                            $description = $category->description;
+                                                            if (!empty($description)) {
+                                                                echo htmlspecialchars(substr($description, 0, 50) . (strlen($description) > 50 ? '...' : ''));
+                                                            } else {
+                                                                echo '<em class="text-muted">Non renseignée</em>';
+                                                            }
+                                                            ?>
+                                                        </td>
+                                                        <td>
+                                                            <?php if ($category->product_count > 0): ?>
+                                                                <a href="gestion_meubles.php?category=<?= $category->id ?>" class="text-decoration-none">
+                                                                    <?= $category->product_count ?> produit(s)
                                                                 </a>
                                                             <?php else: ?>
                                                                 <span class="text-muted">0 produit</span>
                                                             <?php endif; ?>
                                                         </td>
                                                         <td class="text-end">
-                                                            <a href="gestion_categories.php?action=edit&id=<?= $category['id'] ?>" class="btn btn-sm btn-info text-white" title="Modifier">
+                                                            <a href="gestion_categories.php?action=edit&id=<?= $category->id ?>" class="btn btn-sm btn-info text-white" title="Modifier">
                                                                 <i class="fas fa-edit"></i>
                                                             </a>
-                                                            <button type="button" class="btn btn-sm btn-danger" data-bs-toggle="modal" data-bs-target="#deleteCategoryModal<?= $category['id'] ?>" title="Supprimer">
-                                                                <i class="fas fa-trash"></i>
+                                                            <button type="button" class="btn btn-sm btn-danger" data-bs-toggle="modal" data-bs-target="#deleteCategoryModal<?= $category->id ?>" title="Supprimer">
+                                                                <i class="fas fa-trash-alt"></i>
                                                             </button>
                                                             
                                                             <!-- Modal de confirmation de suppression -->
-                                                            <div class="modal fade" id="deleteCategoryModal<?= $category['id'] ?>" tabindex="-1" aria-hidden="true">
+                                                            <div class="modal fade" id="deleteCategoryModal<?= $category->id ?>" tabindex="-1" aria-hidden="true">
                                                                 <div class="modal-dialog">
                                                                     <div class="modal-content">
                                                                         <div class="modal-header">
                                                                             <h5 class="modal-title">Confirmer la suppression</h5>
                                                                             <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
                                                                         </div>
-                                                                        <div class="modal-body text-start">
-                                                                            <p>Êtes-vous sûr de vouloir supprimer la catégorie "<?= htmlspecialchars($category['nom']) ?>" ?</p>
+                                                                        <div class="modal-body">
+                                                                            <p>Êtes-vous sûr de vouloir supprimer la catégorie "<?= htmlspecialchars($category->nom) ?>" ?</p>
                                                                             
-                                                                            <?php if ($category['product_count'] > 0): ?>
-                                                                                <div class="alert alert-warning">
+                                                                            <?php if ($category->product_count > 0): ?>
+                                                                                <div class="alert alert-warning mb-0">
                                                                                     <i class="fas fa-exclamation-triangle me-2"></i>
-                                                                                    Cette catégorie est utilisée par <?= $category['product_count'] ?> produit(s). La suppression définira la catégorie à NULL pour ces produits.
+                                                                                    Cette catégorie contient <?= $category->product_count ?> produit(s). La suppression définira la catégorie de ces produits à NULL.
                                                                                 </div>
                                                                             <?php endif; ?>
-                                                                            
-                                                                            <p class="text-danger mb-0">Cette action est irréversible.</p>
                                                                         </div>
                                                                         <div class="modal-footer">
                                                                             <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Annuler</button>
-                                                                            <a href="gestion_categories.php?action=delete&id=<?= $category['id'] ?>&force=1" class="btn btn-danger">Supprimer</a>
+                                                                            <a href="gestion_categories.php?action=delete&id=<?= $category->id ?>&force=1" class="btn btn-danger">Supprimer</a>
                                                                         </div>
                                                                     </div>
                                                                 </div>

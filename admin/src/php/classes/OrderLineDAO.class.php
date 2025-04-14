@@ -177,4 +177,28 @@ class OrderLineDAO
             return false;
         }
     }
+    
+    /**
+     * Calcule le sous-total d'une ligne de commande
+     * @param array $orderLineData Données de la ligne de commande (quantite et prix_unitaire)
+     * @return float Sous-total
+     */
+    public function calculateSubtotal($orderLineData)
+    {
+        if (isset($orderLineData['quantite']) && isset($orderLineData['prix_unitaire'])) {
+            return $orderLineData['quantite'] * $orderLineData['prix_unitaire'];
+        }
+        return 0;
+    }
+    
+    /**
+     * Met à jour la quantité d'une ligne de commande
+     * @param int $id ID de la ligne de commande
+     * @param int $quantity Nouvelle quantité
+     * @return bool Succès ou échec
+     */
+    public function updateQuantity($id, $quantity)
+    {
+        return $this->update($id, ['quantite' => $quantity]);
+    }
 }

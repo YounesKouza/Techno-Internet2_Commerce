@@ -6,6 +6,10 @@
 // Titre de la page
 $titre_page = 'Commande confirmée';
 
+// Inclusion des fichiers nécessaires
+require_once __DIR__ . '/../admin/src/php/utils/connexion.php';
+require_once __DIR__ . '/../admin/src/php/utils/all_includes.php';
+
 // Vérifier si l'ID de la dernière commande est en session
 if (!isset($_SESSION['last_order_id']) && !isset($_SESSION['flash_messages'])) {
     // Si pas d'ID et pas de message flash (cas où on recharge la page)
@@ -20,9 +24,13 @@ $order = null;
 // Optionnel : Récupérer les détails de la commande pour affichage si l'ID existe
 if ($last_order_id) {
     $pdo = getPDO();
-    $stmt = $pdo->prepare("SELECT * FROM orders WHERE id = ? AND user_id = ?");
-    $stmt->execute([$last_order_id, $_SESSION['user_id']]);
-    $order = $stmt->fetch();
+    $orderDAO = new OrderDAO($pdo);
+    $order = $orderDAO->findById($last_order_id);
+    
+    // Vérifier que la commande appartient bien à l'utilisateur connecté
+    if ($order && $order->utilisateur_id != $_SESSION['user_id']) {
+        $order = null;
+    }
 }
 
 // Afficher les messages flash (s'ils existent)
@@ -48,11 +56,11 @@ unset($_SESSION['last_order_id']);
             <?php endforeach; ?>
 
             <?php if ($order): ?>
-                <p class="lead">Votre commande numéro <strong>#<?= htmlspecialchars($order['id']) ?></strong> a été enregistrée avec succès.</p>
+                <p class="lead">Votre commande numéro <strong>#<?= htmlspecialchars($order->id) ?></strong> a été enregistrée avec succès.</p>
                 <p>Elle a été marquée comme <strong>livrée</strong> instantanément.</p>
                 <p>Un récapitulatif vous sera envoyé par email (fonctionnalité non implémentée).</p>
                 <hr class="my-4">
-                <p class="mb-0">Total de la commande : <strong><?= number_format($order['total'], 2, ',', ' ') ?> €</strong></p>
+                <p class="mb-0">Total de la commande : <strong><?= number_format($order->montant_total, 2, ',', ' ') ?> €</strong></p>
             <?php elseif (empty($flash_messages)): // Afficher un message générique si pas d'order et pas de flash ?>
                  <p class="lead">Votre commande a été enregistrée avec succès.</p>
                  <p>Elle a été marquée comme <strong>livrée</strong> instantanément.</p>

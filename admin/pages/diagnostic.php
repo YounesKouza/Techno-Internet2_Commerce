@@ -158,12 +158,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['test_image_upload']))
                         // Chemin relatif pour l'affichage
                         $upload_details['Aperçu'] = '/Exos/Techno-internet2_commerce/admin/public/images/' . $selected_category . '/' . $new_filename;
                         
-                        // Supprimer le fichier après 60 secondes (en arrière-plan)
-                        register_shutdown_function(function() use ($destination) {
-                            if (file_exists($destination)) {
-                                @unlink($destination);
-                            }
-                        });
+                        // Ne pas supprimer le fichier après l'upload
+                        // Les images resteront dans le dossier de la catégorie
                     } else {
                         $upload_test_result = "Erreur: Impossible de déplacer le fichier uploadé vers '$destination'.";
                     }
@@ -227,8 +223,16 @@ $php_config = [
     
     <!-- CSS personnalisé -->
     <link rel="stylesheet" href="/Exos/Techno-internet2_commerce/admin/public/css/style.css">
+    
+    <?php 
+    // Ajouter la référence à la fonction add_body_class
+    if (!function_exists('add_body_class')) {
+        require_once __DIR__ . '/../src/php/utils/all_includes.php';
+    }
+    add_body_class(); // Ajout automatique de la classe admin-interface si nécessaire 
+    ?>
 </head>
-<body class="admin-interface">
+<body>
     <div class="container-fluid">
         <div class="row">
             <?php generate_sidebar('diagnostic'); ?>

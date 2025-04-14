@@ -16,59 +16,39 @@ if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'admin') {
 // Inclusion des fichiers nécessaires
 require_once '../src/php/utils/connexion.php';
 require_once '../src/php/utils/sidebar.php';
+require_once '../src/php/utils/all_includes.php';
 
-// Récupération des statistiques
+// Initialisation de la connexion à la base de données
 $pdo = getPDO();
 
+// Initialisation des objets DAO
+$productDAO = new ProductDAO($pdo);
+$orderDAO = new OrderDAO($pdo);
+$userDAO = new UserDAO($pdo);
+
 // Nombre total de produits
-$products_count = $pdo->query("SELECT COUNT(*) FROM products")->fetchColumn();
+$products_count = $productDAO->countAll();
 
 // Nombre total de commandes
-$orders_count = $pdo->query("SELECT COUNT(*) FROM orders")->fetchColumn();
+$orders_count = $orderDAO->countAll();
 
 // Nombre de clients
-$users_count = $pdo->query("SELECT COUNT(*) FROM users WHERE role = 'client'")->fetchColumn();
+$users_count = $userDAO->countByRole('client');
 
-// Chiffre d'affaires total
-$total_sales = $pdo->query("SELECT COALESCE(SUM(montant_total), 0) FROM orders WHERE statut != 'cancelled'")->fetchColumn();
+// Chiffre d'affaires total (pour les commandes non annulées)
+$total_sales = $orderDAO->getTotalSales();
 
 // Commandes récentes
-$recent_orders = $pdo->query("
-    SELECT o.id, o.montant_total, o.statut, o.date_commande as created_at, u.nom as username, u.email 
-    FROM orders o 
-    LEFT JOIN users u ON o.utilisateur_id = u.id 
-    ORDER BY o.date_commande DESC 
-    LIMIT 5
-")->fetchAll();
+$recent_orders = $orderDAO->findRecent(5);
 
 // Produits les plus vendus
-$best_sellers = $pdo->query("
-    SELECT p.id, p.titre as name, p.prix as price, p.image_principale as image_path, 
-           COALESCE(SUM(ol.quantite), 0) as total_sold
-    FROM products p
-    LEFT JOIN order_lines ol ON p.id = ol.produit_id
-    LEFT JOIN orders o ON ol.order_id = o.id AND o.statut != 'cancelled'
-    GROUP BY p.id, p.titre, p.prix, p.image_principale
-    ORDER BY total_sold DESC
-    LIMIT 5
-")->fetchAll();
+$best_sellers = $productDAO->findBestSellers(5);
 
 // Derniers clients inscrits
-$recent_users = $pdo->query("
-    SELECT id, nom as username, email, date_inscription as created_at 
-    FROM users 
-    WHERE role = 'client' 
-    ORDER BY date_inscription DESC 
-    LIMIT 5
-")->fetchAll();
+$recent_users = $userDAO->findRecentByRole('client', 5);
 
 // Alertes de stock bas (moins de 5 unités)
-$low_stock = $pdo->query("
-    SELECT id, titre as name, stock 
-    FROM products 
-    WHERE stock < 5 
-    ORDER BY stock ASC
-")->fetchAll();
+$low_stock = $productDAO->findLowStock(5);
 ?>
 
 <!DOCTYPE html>
@@ -195,9 +175,9 @@ $low_stock = $pdo->query("
                     <ul class="mb-0">
                         <?php foreach ($low_stock as $item): ?>
                             <li>
-                                <a href="update_meuble.php?id=<?= $item['id'] ?>" class="text-decoration-none">
-                                    <?= htmlspecialchars($item['name']) ?> 
-                                    <strong>(<?= $item['stock'] ?> en stock)</strong>
+                                <a href="update_meuble.php?id=<?= $item->id ?>" class="text-decoration-none">
+                                    <?= htmlspecialchars($item->titre ?? $item->name) ?> 
+                                    <strong>(<?= $item->stock ?> en stock)</strong>
                                 </a>
                             </li>
                         <?php endforeach; ?>
@@ -232,15 +212,15 @@ $low_stock = $pdo->query("
                                             <?php else: ?>
                                                 <?php foreach ($recent_orders as $order): ?>
                                                     <tr>
-                                                        <td><?= $order['id'] ?></td>
+                                                        <td><?= $order->id ?></td>
                                                         <td>
-                                                            <?= !empty($order['username']) ? htmlspecialchars($order['username']) : 'Client anonyme' ?>
+                                                            <?= !empty($order->client_nom) ? htmlspecialchars($order->client_nom) : 'Client anonyme' ?>
                                                         </td>
-                                                        <td><?= number_format($order['montant_total'], 2, ',', ' ') ?> €</td>
+                                                        <td><?= number_format($order->montant_total, 2, ',', ' ') ?> €</td>
                                                         <td>
                                                             <?php 
                                                             $status_class = 'secondary';
-                                                            switch($order['statut']) {
+                                                            switch($order->statut) {
                                                                 case 'completed': $status_class = 'success'; break;
                                                                 case 'processing': $status_class = 'primary'; break;
                                                                 case 'pending': $status_class = 'warning'; break;
@@ -248,10 +228,10 @@ $low_stock = $pdo->query("
                                                             }
                                                             ?>
                                                             <span class="badge bg-<?= $status_class ?>">
-                                                                <?= ucfirst($order['statut']) ?>
+                                                                <?= ucfirst($order->statut) ?>
                                                             </span>
                                                         </td>
-                                                        <td><?= date('d/m/Y H:i', strtotime($order['created_at'])) ?></td>
+                                                        <td><?= date('d/m/Y H:i', strtotime($order->date_commande ?? $order->created_at)) ?></td>
                                                     </tr>
                                                 <?php endforeach; ?>
                                             <?php endif; ?>
@@ -282,7 +262,7 @@ $low_stock = $pdo->query("
                                     <div class="best-selling-product-item">
                                         <img 
                                             src="<?php 
-                                                $image_path = $product['image_path'] ?? '';
+                                                $image_path = $product->image_principale ?? $product->image_path ?? '';
                                                 if (empty($image_path)) {
                                                     echo '/Exos/Techno-internet2_commerce/public/images/logo.png';
                                                 } else if (strpos($image_path, '/') === 0) {
@@ -293,17 +273,17 @@ $low_stock = $pdo->query("
                                                     echo '/Exos/Techno-internet2_commerce/' . htmlspecialchars($image_path);
                                                 }
                                             ?>" 
-                                            alt="<?= htmlspecialchars($product['name']) ?>" 
+                                            alt="<?= htmlspecialchars($product->titre ?? $product->name) ?>" 
                                             class="best-selling-product-image"
                                             onerror="this.src='/Exos/Techno-internet2_commerce/public/images/logo.png'"
                                         >
                                         <div class="best-selling-product-info">
-                                            <h6><?= htmlspecialchars($product['name']) ?></h6>
+                                            <h6><?= htmlspecialchars($product->titre ?? $product->name) ?></h6>
                                             <div class="d-flex justify-content-between align-items-center">
-                                                <span class="price"><?= number_format($product['price'], 2, ',', ' ') ?> €</span>
+                                                <span class="price"><?= number_format($product->prix ?? $product->price, 2, ',', ' ') ?> €</span>
                                                 <span class="sold">
                                                     <i class="fas fa-shopping-cart me-1"></i> 
-                                                    <?= $product['total_sold'] ?> vendu(s)
+                                                    <?= $product->total_sold ?? 0 ?> vendu(s)
                                                 </span>
                                             </div>
                                         </div>
@@ -340,12 +320,12 @@ $low_stock = $pdo->query("
                                     <?php else: ?>
                                         <?php foreach ($recent_users as $user): ?>
                                             <tr>
-                                                <td><?= $user['id'] ?></td>
-                                                <td><?= htmlspecialchars($user['username']) ?></td>
-                                                <td><?= htmlspecialchars($user['email']) ?></td>
-                                                <td><?= date('d/m/Y H:i', strtotime($user['created_at'])) ?></td>
+                                                <td><?= $user->id ?></td>
+                                                <td><?= htmlspecialchars($user->nom ?? $user->username) ?></td>
+                                                <td><?= htmlspecialchars($user->email) ?></td>
+                                                <td><?= date('d/m/Y H:i', strtotime($user->date_inscription ?? $user->created_at)) ?></td>
                                                 <td>
-                                                    <a href="gestion_clients.php?id=<?= $user['id'] ?>" class="btn btn-sm btn-outline-primary">
+                                                    <a href="gestion_clients.php?id=<?= $user->id ?>" class="btn btn-sm btn-outline-primary">
                                                         <i class="fas fa-eye"></i>
                                                     </a>
                                                 </td>

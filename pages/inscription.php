@@ -9,11 +9,16 @@ header('Content-Type: text/html; charset=utf-8');
 mb_internal_encoding('UTF-8');
 mb_http_output('UTF-8');
 
-// Inclusion du fichier de connexion
+// Inclusion des fichiers nécessaires
 require_once __DIR__ . '/../admin/src/php/utils/connexion.php';
+require_once __DIR__ . '/../admin/src/php/utils/all_includes.php';
 
 // Titre de la page
 $titre_page = 'Inscription';
+
+// Initialisation des objets DAO et métier
+$pdo = getPDO();
+$userDAO = new UserDAO($pdo);
 
 // Initialisation des variables
 $success_message = '';
@@ -48,10 +53,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $errors[] = 'L\'email n\'est pas valide';
     } else {
         // Vérifier si l'email existe déjà
-        $pdo = getPDO();
-        $stmt = $pdo->prepare("SELECT COUNT(*) FROM users WHERE email = ?");
-        $stmt->execute([$email]);
-        if ($stmt->fetchColumn() > 0) {
+        $existingUser = $userDAO->findByEmail($email);
+        if ($existingUser) {
             $errors[] = 'Cet email est déjà utilisé';
         }
     }
@@ -68,25 +71,29 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     // Si aucune erreur, procéder à l'inscription
     if (empty($errors)) {
         try {
-            $pdo = getPDO();
+            // Préparation des données de l'utilisateur
+            $userData = [
+                'nom' => $nom,
+                'email' => $email,
+                'mot_de_passe' => $password, // Le hachage est géré par la méthode create du DAO
+                'telephone' => $telephone,
+                'adresse' => $adresse,
+                'role' => 'user'
+            ];
             
-            // Préparation du hash du mot de passe
-            $password_hash = password_hash($password, PASSWORD_DEFAULT);
+            // Création de l'utilisateur via le DAO
+            $userId = $userDAO->create($userData);
             
-            // Insertion du nouvel utilisateur
-            $stmt = $pdo->prepare("
-                INSERT INTO users (nom, email, password, telephone, adresse, role, date_creation)
-                VALUES (?, ?, ?, ?, ?, 'user', NOW())
-            ");
-            
-            $stmt->execute([$nom, $email, $password_hash, $telephone, $adresse]);
-            
-            // Message de succès
-            $success_message = 'Votre compte a été créé avec succès! Vous pouvez maintenant vous connecter.';
-            
-            // Réinitialisation des champs du formulaire
-            $nom = $email = $telephone = $adresse = '';
-        } catch (PDOException $e) {
+            if ($userId) {
+                // Message de succès
+                $success_message = 'Votre compte a été créé avec succès! Vous pouvez maintenant vous connecter.';
+                
+                // Réinitialisation des champs du formulaire
+                $nom = $email = $telephone = $adresse = '';
+            } else {
+                $error_message = 'Une erreur est survenue lors de l\'inscription. Veuillez réessayer plus tard.';
+            }
+        } catch (Exception $e) {
             $error_message = 'Une erreur est survenue lors de l\'inscription. Veuillez réessayer plus tard.';
         }
     } else {

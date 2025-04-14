@@ -4,8 +4,9 @@
  * Affiche les informations du compte et permet de gérer le profil
  */
 
-// Inclusion du fichier de connexion
+// Inclusion des fichiers nécessaires
 require_once __DIR__ . '/../admin/src/php/utils/connexion.php';
+require_once __DIR__ . '/../admin/src/php/utils/all_includes.php';
 
 // Force l'encodage en UTF-8
 mb_internal_encoding('UTF-8');
@@ -21,11 +22,13 @@ if (!isset($_SESSION['user_id'])) {
     exit;
 }
 
-// Récupération des informations de l'utilisateur
+// Initialisation des objets DAO et métier
 $pdo = getPDO();
-$stmt = $pdo->prepare("SELECT * FROM users WHERE id = ?");
-$stmt->execute([$_SESSION['user_id']]);
-$user = $stmt->fetch();
+$userDAO = new UserDAO($pdo);
+$orderDAO = new OrderDAO($pdo);
+
+// Récupération des informations de l'utilisateur
+$user = $userDAO->findById($_SESSION['user_id']);
 
 if (!$user) {
     // L'utilisateur n'existe plus en base de données
@@ -39,16 +42,21 @@ if (!$user) {
 }
 
 // Récupération des commandes de l'utilisateur
-$orders_stmt = $pdo->prepare("
-    SELECT o.*, COUNT(ol.id) as nb_products 
-    FROM orders o
-    LEFT JOIN order_lines ol ON o.id = ol.order_id
-    WHERE o.utilisateur_id = ?
-    GROUP BY o.id
-    ORDER BY o.date_commande DESC
-");
-$orders_stmt->execute([$_SESSION['user_id']]);
-$orders = $orders_stmt->fetchAll();
+$orders = $orderDAO->findByUserId($_SESSION['user_id']);
+
+// Gestion des messages d'erreur/succès stockés en session
+if (isset($_SESSION['error_message'])) {
+    $error_msg = $_SESSION['error_message'];
+    unset($_SESSION['error_message']);
+}
+
+if (isset($_SESSION['success_message'])) {
+    $success_msg = $_SESSION['success_message'];
+    unset($_SESSION['success_message']);
+}
+
+// Déterminer la section active
+$active_section = isset($_GET['section']) ? $_GET['section'] : 'profile';
 
 // Titre de la page
 $titre_page = 'Mon compte';
@@ -57,26 +65,48 @@ $titre_page = 'Mon compte';
 $success_msg = '';
 $error_msg = '';
 
+// Traitement de la suppression de compte
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_account'])) {
+    // Vérifier que l'utilisateur est bien connecté
+    if (isset($_SESSION['user_id'])) {
+        // Supprimer le compte
+        if ($userDAO->delete($_SESSION['user_id'])) {
+            // Détruire la session
+            session_unset();
+            session_destroy();
+            
+            // Rediriger vers la page d'accueil avec un message
+            session_start();
+            $_SESSION['success_message'] = 'Votre compte a été supprimé avec succès.';
+            header('Location: index_.php');
+            exit;
+        } else {
+            $error_msg = 'Une erreur est survenue lors de la suppression de votre compte.';
+        }
+    }
+}
+
 // Traitement du changement de statut de commande
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'change_status') {
     $order_id = isset($_POST['order_id']) ? intval($_POST['order_id']) : 0;
     
     if ($order_id > 0) {
         // Vérifier que la commande appartient bien à l'utilisateur
-        $check_order = $pdo->prepare("SELECT id, statut FROM orders WHERE id = ? AND utilisateur_id = ?");
-        $check_order->execute([$order_id, $_SESSION['user_id']]);
-        $order_data = $check_order->fetch();
+        $orderDetails = $orderDAO->findDetailById($order_id);
         
-        if ($order_data && ($order_data['statut'] === 'en attente' || $order_data['statut'] === 'en cours')) {
+        if ($orderDetails && $orderDetails['utilisateur_id'] == $_SESSION['user_id'] && 
+            ($orderDetails['statut'] === 'en attente' || $orderDetails['statut'] === 'en cours')) {
             // Mise à jour du statut
-            $update_status = $pdo->prepare("UPDATE orders SET statut = 'livré' WHERE id = ?");
+            $orderData = [
+                'id' => $order_id,
+                'statut' => 'livré'
+            ];
             
-            if ($update_status->execute([$order_id])) {
+            if ($orderDAO->update($orderData)) {
                 $success_msg = 'Le statut de la commande #' . $order_id . ' a été mis à jour avec succès';
                 
                 // Rafraîchir la liste des commandes
-                $orders_stmt->execute([$_SESSION['user_id']]);
-                $orders = $orders_stmt->fetchAll();
+                $orders = $orderDAO->findByUserId($_SESSION['user_id']);
             } else {
                 $error_msg = 'Une erreur est survenue lors de la mise à jour du statut de la commande';
             }
@@ -99,25 +129,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_profile'])) {
         $error_msg = 'Les champs nom et email sont obligatoires';
     } else {
         // Vérifier si l'email est déjà utilisé par un autre utilisateur
-        $check_email = $pdo->prepare("SELECT id FROM users WHERE email = ? AND id != ?");
-        $check_email->execute([$email, $_SESSION['user_id']]);
+        $existingUser = $userDAO->findByEmail($email);
         
-        if ($check_email->rowCount() > 0) {
+        if ($existingUser && $existingUser->id != $_SESSION['user_id']) {
             $error_msg = 'Cet email est déjà utilisé par un autre compte';
         } else {
-            // Mise à jour des informations
-            $update = $pdo->prepare("
-                UPDATE users 
-                SET nom = ?, email = ?, telephone = ?, adresse = ?
-                WHERE id = ?
-            ");
+            // Préparation des données pour la mise à jour
+            $userData = [
+                'id' => $_SESSION['user_id'],
+                'nom' => $nom,
+                'email' => $email,
+                'telephone' => $telephone,
+                'adresse' => $adresse
+            ];
             
-            if ($update->execute([$nom, $email, $telephone, $adresse, $_SESSION['user_id']])) {
+            // Mise à jour des informations
+            if ($userDAO->update($userData)) {
                 $success_msg = 'Votre profil a été mis à jour avec succès';
                 
                 // Rafraîchir les informations de l'utilisateur
-                $stmt->execute([$_SESSION['user_id']]);
-                $user = $stmt->fetch();
+                $user = $userDAO->findById($_SESSION['user_id']);
             } else {
                 $error_msg = 'Une erreur est survenue lors de la mise à jour de votre profil';
             }
@@ -159,9 +190,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_profile'])) {
                 <a href="#orders" class="list-group-item list-group-item-action" data-bs-toggle="list">
                     <i class="fas fa-shopping-bag me-2"></i> Mes commandes
                 </a>
-                <a href="#addresses" class="list-group-item list-group-item-action" data-bs-toggle="list">
-                    <i class="fas fa-map-marker-alt me-2"></i> Mes adresses
-                </a>
                 <a href="#settings" class="list-group-item list-group-item-action" data-bs-toggle="list">
                     <i class="fas fa-cog me-2"></i> Paramètres
                 </a>
@@ -185,22 +213,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_profile'])) {
                                 <div class="row">
                                     <div class="col-md-6 mb-3">
                                         <label for="nom" class="form-label">Nom complet</label>
-                                        <input type="text" class="form-control" id="nom" name="nom" value="<?= htmlspecialchars($user['nom']) ?>" required>
+                                        <input type="text" class="form-control" id="nom" name="nom" value="<?= htmlspecialchars($user->nom) ?>" required>
                                     </div>
                                     
                                     <div class="col-md-6 mb-3">
                                         <label for="email" class="form-label">Adresse email</label>
-                                        <input type="email" class="form-control" id="email" name="email" value="<?= htmlspecialchars($user['email']) ?>" required>
+                                        <input type="email" class="form-control" id="email" name="email" value="<?= htmlspecialchars($user->email) ?>" required>
                                     </div>
                                     
                                     <div class="col-md-6 mb-3">
                                         <label for="telephone" class="form-label">Téléphone</label>
-                                        <input type="tel" class="form-control" id="telephone" name="telephone" value="<?= htmlspecialchars($user['telephone'] ?? '') ?>">
+                                        <input type="tel" class="form-control" id="telephone" name="telephone" value="<?= htmlspecialchars($user->telephone ?? '') ?>">
                                     </div>
                                     
                                     <div class="col-12 mb-3">
                                         <label for="adresse" class="form-label">Adresse complète</label>
-                                        <textarea class="form-control" id="adresse" name="adresse" rows="3"><?= htmlspecialchars($user['adresse'] ?? '') ?></textarea>
+                                        <textarea class="form-control" id="adresse" name="adresse" rows="3"><?= htmlspecialchars($user->adresse ?? '') ?></textarea>
                                     </div>
                                 </div>
                                 
@@ -248,7 +276,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_profile'])) {
                                                 <tr>
                                                     <td>#<?= $order['id'] ?></td>
                                                     <td><?= date('d/m/Y', strtotime($order['date_commande'])) ?></td>
-                                                    <td><?= $order['nb_products'] ?> article(s)</td>
+                                                    <td><?= isset($order['nb_produits']) ? $order['nb_produits'] : $orderDAO->countProductsInOrder($order['id']) ?> article(s)</td>
                                                     <td><?= number_format($order['montant_total'], 2, ',', ' ') ?> €</td>
                                                     <td>
                                                         <?php 
@@ -271,16 +299,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_profile'])) {
                                                         <span class="badge <?= $badge_class ?>"><?= ucfirst($order['statut']) ?></span>
                                                     </td>
                                                     <td>
+                                                        <a href="index_.php?page=commande_details&id=<?= $order['id'] ?>" class="btn btn-sm btn-outline-primary me-1" title="Voir les détails">
+                                                            <i class="fas fa-eye"></i>
+                                                        </a>
+                                                        
                                                         <?php if ($order['statut'] === 'en attente' || $order['statut'] === 'en cours'): ?>
-                                                        <form method="post" style="display: inline-block;" action="index_.php?page=compte">
+                                                        <form method="post" style="display: inline-block;" action="index_.php?page=compte&section=commandes">
                                                             <input type="hidden" name="order_id" value="<?= $order['id'] ?>">
                                                             <input type="hidden" name="action" value="change_status">
                                                             <button type="submit" class="btn btn-sm btn-outline-success" title="Marquer comme livré">
-                                                                <i class="fas fa-check"></i> Marquer comme livré
+                                                                <i class="fas fa-check"></i>
                                                             </button>
                                                         </form>
-                                                        <?php else: ?>
-                                                        <span class="text-muted"><i class="fas fa-check-circle"></i> Commande traitée</span>
                                                         <?php endif; ?>
                                                     </td>
                                                 </tr>
@@ -289,55 +319,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_profile'])) {
                                     </table>
                                 </div>
                             <?php endif; ?>
-                        </div>
-                    </div>
-                </div>
-                
-                <!-- Onglet Adresses -->
-                <div class="tab-pane fade" id="addresses">
-                    <div class="card">
-                        <div class="card-header bg-white">
-                            <h5 class="card-title mb-0">Mes adresses</h5>
-                        </div>
-                        <div class="card-body">
-                            <div class="row">
-                                <div class="col-lg-6 mb-4">
-                                    <div class="card h-100 border">
-                                        <div class="card-body">
-                                            <h6 class="card-subtitle mb-3 text-muted">Adresse principale</h6>
-                                            
-                                            <?php if (!empty($user['adresse'])): ?>
-                                                <address>
-                                                    <?= nl2br(htmlspecialchars($user['adresse'])) ?>
-                                                </address>
-                                                
-                                                <div class="mt-3">
-                                                    <a href="#" class="btn btn-sm btn-outline-primary me-2">
-                                                        <i class="fas fa-edit"></i> Modifier
-                                                    </a>
-                                                </div>
-                                            <?php else: ?>
-                                                <p class="text-muted">Aucune adresse enregistrée</p>
-                                                <a href="#" class="btn btn-sm btn-outline-primary">
-                                                    <i class="fas fa-plus"></i> Ajouter une adresse
-                                                </a>
-                                            <?php endif; ?>
-                                        </div>
-                                    </div>
-                                </div>
-                                
-                                <div class="col-lg-6 mb-4">
-                                    <div class="card h-100 border">
-                                        <div class="card-body text-center d-flex flex-column justify-content-center">
-                                            <i class="fas fa-plus-circle fa-3x text-muted mb-3"></i>
-                                            <p>Ajouter une nouvelle adresse</p>
-                                            <a href="#" class="btn btn-outline-primary">
-                                                Ajouter
-                                            </a>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
                         </div>
                     </div>
                 </div>
@@ -419,13 +400,29 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_profile'])) {
 
 <script>
 document.addEventListener('DOMContentLoaded', function() {
-    // Activer le bon onglet en fonction du fragment d'URL
+    // Activer le bon onglet en fonction du fragment d'URL ou de la section
+    let targetTab = '#profile'; // Par défaut
+    
+    // Vérifier si une section est spécifiée dans l'URL
+    <?php if (isset($_GET['section'])): ?>
+    const section = '<?= $_GET['section'] ?>';
+    if (section === 'commandes') {
+        targetTab = '#orders';
+    } else if (section === 'parametres') {
+        targetTab = '#settings';
+    }
+    <?php endif; ?>
+    
+    // Vérifier également le fragment d'URL (priorité plus basse)
     const hash = window.location.hash;
-    if (hash) {
-        const triggerEl = document.querySelector(`a[href="${hash}"]`);
-        if (triggerEl) {
-            new bootstrap.Tab(triggerEl).show();
-        }
+    if (hash && !targetTab.endsWith(hash)) {
+        targetTab = hash;
+    }
+    
+    // Activer l'onglet
+    const triggerEl = document.querySelector(`a[href="${targetTab}"]`);
+    if (triggerEl) {
+        new bootstrap.Tab(triggerEl).show();
     }
     
     // Gérer les clics sur les onglets pour mettre à jour l'URL

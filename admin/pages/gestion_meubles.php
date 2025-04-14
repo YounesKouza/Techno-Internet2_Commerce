@@ -16,6 +16,7 @@ if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'admin') {
 // Inclusion des fichiers nécessaires
 require_once '../src/php/utils/connexion.php';
 require_once '../src/php/utils/sidebar.php';
+require_once '../src/php/utils/all_includes.php';
 
 // Paramètres de pagination
 $page = isset($_GET['page_num']) ? (int)$_GET['page_num'] : 1;
@@ -30,83 +31,59 @@ $sort = isset($_GET['sort']) ? htmlspecialchars($_GET['sort']) : 'id_asc';
 // Connexion à la base de données
 $pdo = getPDO();
 
-// Construction de la requête SQL
-$sql_count = "SELECT COUNT(*) FROM products p WHERE p.actif = true";
-$sql = "SELECT p.*, c.nom as category_name 
-        FROM products p 
-        JOIN categories c ON p.categorie_id = c.id 
-        WHERE p.actif = true";
+// Initialisation des objets DAO
+$productDAO = new ProductDAO($pdo);
+$categoryDAO = new CategoryDAO($pdo);
 
-$params = [];
-
-// Ajout des conditions de recherche/filtre
-if (!empty($search)) {
-    $sql .= " AND (p.titre ILIKE ? OR p.description ILIKE ?)";
-    $sql_count .= " AND (p.titre ILIKE ? OR p.description ILIKE ?)";
-    $search_term = '%' . $search . '%';
-    $params[] = $search_term;
-    $params[] = $search_term;
-}
-
-if ($category_filter > 0) {
-    $sql .= " AND p.categorie_id = ?";
-    $sql_count .= " AND p.categorie_id = ?";
-    $params[] = $category_filter;
-}
-
-// Ajout de l'ordre de tri
+// Détermination de l'ordre de tri
+$orderBy = 'p.id ASC'; // par défaut
 switch ($sort) {
     case 'name_asc':
-        $sql .= " ORDER BY p.titre ASC";
+        $orderBy = 'p.titre ASC';
         break;
     case 'name_desc':
-        $sql .= " ORDER BY p.titre DESC";
+        $orderBy = 'p.titre DESC';
         break;
     case 'price_asc':
-        $sql .= " ORDER BY p.prix ASC";
+        $orderBy = 'p.prix ASC';
         break;
     case 'price_desc':
-        $sql .= " ORDER BY p.prix DESC";
+        $orderBy = 'p.prix DESC';
         break;
     case 'stock_asc':
-        $sql .= " ORDER BY p.stock ASC";
+        $orderBy = 'p.stock ASC';
         break;
     case 'stock_desc':
-        $sql .= " ORDER BY p.stock DESC";
+        $orderBy = 'p.stock DESC';
         break;
     case 'id_desc':
-        $sql .= " ORDER BY p.id DESC";
+        $orderBy = 'p.id DESC';
         break;
-    default:
-        $sql .= " ORDER BY p.id ASC";
 }
 
-// Ajout de la limite pour la pagination
-$sql .= " LIMIT ? OFFSET ?";
-$params[] = $items_per_page;
-$params[] = $offset;
-
-// Exécution des requêtes
-$stmt_count = $pdo->prepare($sql_count);
-$stmt_count->execute($params_count ?? []);
-$total_items = $stmt_count->fetchColumn();
-
-$stmt = $pdo->prepare($sql);
-$stmt->execute($params);
-$products = $stmt->fetchAll();
+// Récupération des produits avec filtre et pagination
+if (!empty($search)) {
+    // Si recherche, utiliser la méthode de recherche
+    $total_items = $productDAO->countSearchResults($search, true, $category_filter > 0 ? $category_filter : null);
+    $products = $productDAO->search($search, true, $items_per_page, $offset, $category_filter > 0 ? $category_filter : null, $orderBy);
+} else {
+    // Sinon, récupérer tous les produits actifs avec filtrage
+    $total_items = $productDAO->countAll($category_filter > 0 ? $category_filter : null, true);
+    $products = $productDAO->findAll($category_filter > 0 ? $category_filter : null, true, $orderBy, $items_per_page, $offset);
+}
 
 // Calcul du nombre total de pages
 $total_pages = ceil($total_items / $items_per_page);
 
 // Récupération des catégories pour le filtre
-$categories = $pdo->query("SELECT id, nom FROM categories ORDER BY nom")->fetchAll();
+$categories = $categoryDAO->findAll();
 
 // Traitement de la suppression d'un produit (soft delete)
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_product'])) {
     $product_id = (int)$_POST['delete_product'];
     
-    $stmt_delete = $pdo->prepare("UPDATE products SET actif = false WHERE id = ?");
-    $stmt_delete->execute([$product_id]);
+    // Désactiver le produit (soft delete)
+    $productDAO->toggleActiveStatus($product_id, false);
     
     // Redirection pour éviter les soumissions multiples
     header('Location: gestion_meubles.php');
@@ -167,11 +144,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_product'])) {
                             <div class="col-md-3">
                                 <div class="form-group">
                                     <label>Catégorie</label>
-                                    <select name="category" class="form-select">
-                                        <option value="0">Toutes les catégories</option>
+                                    <select class="form-select" id="category-filter" name="category">
+                                        <option value="">Toutes les catégories</option>
                                         <?php foreach ($categories as $category): ?>
-                                            <option value="<?= $category['id'] ?>" <?= $category_filter == $category['id'] ? 'selected' : '' ?>>
-                                                <?= htmlspecialchars($category['nom']) ?>
+                                            <option value="<?= $category->id ?>" <?= $category_filter == $category->id ? 'selected' : '' ?>>
+                                                <?= htmlspecialchars($category->nom) ?>
                                             </option>
                                         <?php endforeach; ?>
                                     </select>
@@ -217,7 +194,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_product'])) {
                                 <thead>
                                     <tr>
                                         <th style="width: 70px">ID</th>
-                                        <th style="width: 100px">Image</th>
                                         <th>Nom</th>
                                         <th>Catégorie</th>
                                         <th>Prix</th>
@@ -229,56 +205,63 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_product'])) {
                                 <tbody>
                                     <?php if (empty($products)): ?>
                                         <tr>
-                                            <td colspan="8" class="text-center py-4">Aucun produit trouvé</td>
+                                            <td colspan="7" class="text-center py-4">Aucun produit trouvé</td>
                                         </tr>
                                     <?php else: ?>
                                         <?php foreach ($products as $product): ?>
                                             <tr>
-                                                <td><?= $product['id'] ?></td>
+                                                <td><?= $product->id ?></td>
+                                                <td><?= htmlspecialchars($product->titre) ?></td>
+                                                <td><?= htmlspecialchars($product->categorie_nom ?? 'Non catégorisé') ?></td>
+                                                <td><?= number_format($product->prix, 2, ',', ' ') ?> €</td>
                                                 <td>
-                                                    <?php if (!empty($product['image_principale'])): ?>
-                                                        <img src="../../<?= htmlspecialchars($product['image_principale']) ?>" 
-                                                             alt="<?= htmlspecialchars($product['titre']) ?>" 
-                                                             class="img-thumbnail">
+                                                    <?php if ($product->stock < 5): ?>
+                                                        <span class="badge bg-danger"><?= $product->stock ?></span>
+                                                    <?php elseif ($product->stock < 10): ?>
+                                                        <span class="badge bg-warning text-dark"><?= $product->stock ?></span>
                                                     <?php else: ?>
-                                                        <div class="bg-light d-flex align-items-center justify-content-center" 
-                                                             style="width: 60px; height: 60px;">
-                                                            <i class="fas fa-image text-muted"></i>
-                                                        </div>
-                                                    <?php endif; ?>
-                                                </td>
-                                                <td><?= htmlspecialchars($product['titre']) ?></td>
-                                                <td><?= htmlspecialchars($product['category_name']) ?></td>
-                                                <td><?= number_format($product['prix'], 2, ',', ' ') ?> €</td>
-                                                <td>
-                                                    <?php if ($product['stock'] <= 0): ?>
-                                                        <span class="badge bg-danger">Rupture</span>
-                                                    <?php elseif ($product['stock'] < 5): ?>
-                                                        <span class="badge bg-warning text-dark"><?= $product['stock'] ?></span>
-                                                    <?php else: ?>
-                                                        <span class="badge bg-success"><?= $product['stock'] ?></span>
+                                                        <span class="badge bg-success"><?= $product->stock ?></span>
                                                     <?php endif; ?>
                                                 </td>
                                                 <td>
-                                                    <?php if (isset($product['featured']) && $product['featured']): ?>
-                                                        <span class="badge bg-primary"><i class="fas fa-star"></i> Oui</span>
+                                                    <?php if ($product->featured): ?>
+                                                        <span class="badge bg-primary">Oui</span>
                                                     <?php else: ?>
                                                         <span class="badge bg-secondary">Non</span>
                                                     <?php endif; ?>
                                                 </td>
                                                 <td>
-                                                    <div class="btn-group btn-group-sm">
-                                                        <a href="update_meuble.php?id=<?= $product['id'] ?>" class="btn btn-outline-primary" title="Modifier">
-                                                            <i class="fas fa-edit"></i>
-                                                        </a>
-                                                        <button type="button" class="btn btn-outline-danger" 
-                                                                data-bs-toggle="modal" 
-                                                                data-bs-target="#deleteModal" 
-                                                                data-product-id="<?= $product['id'] ?>"
-                                                                data-product-name="<?= htmlspecialchars($product['titre']) ?>"
-                                                                title="Supprimer">
-                                                            <i class="fas fa-trash-alt"></i>
-                                                        </button>
+                                                    <a href="update_meuble.php?id=<?= $product->id ?>" class="btn btn-outline-primary" title="Modifier">
+                                                        <i class="fas fa-edit"></i>
+                                                    </a>
+                                                    <button type="button" class="btn btn-outline-danger" 
+                                                            data-bs-toggle="modal" 
+                                                            data-bs-target="#deleteProductModal<?= $product->id ?>" 
+                                                            title="Supprimer">
+                                                        <i class="fas fa-trash"></i>
+                                                    </button>
+                                                    
+                                                    <!-- Modal de confirmation de suppression -->
+                                                    <div class="modal fade" id="deleteProductModal<?= $product->id ?>" tabindex="-1" aria-hidden="true">
+                                                        <div class="modal-dialog">
+                                                            <div class="modal-content">
+                                                                <div class="modal-header">
+                                                                    <h5 class="modal-title">Confirmer la suppression</h5>
+                                                                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                                                                </div>
+                                                                <div class="modal-body">
+                                                                    <p>Êtes-vous sûr de vouloir supprimer le produit <strong><?= htmlspecialchars($product->titre) ?></strong> ?</p>
+                                                                    <p class="mb-0 text-muted small">Note: Le produit sera marqué comme inactif mais restera dans la base de données.</p>
+                                                                </div>
+                                                                <div class="modal-footer">
+                                                                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Annuler</button>
+                                                                    <form action="" method="post">
+                                                                        <input type="hidden" name="delete_product" value="<?= $product->id ?>">
+                                                                        <button type="submit" class="btn btn-danger">Supprimer</button>
+                                                                    </form>
+                                                                </div>
+                                                            </div>
+                                                        </div>
                                                     </div>
                                                 </td>
                                             </tr>
@@ -289,51 +272,63 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_product'])) {
                         </div>
                     </div>
                     
+                    <!-- Pagination -->
                     <?php if ($total_pages > 1): ?>
-                        <!-- Pagination -->
                         <div class="card-footer bg-transparent">
                             <nav>
                                 <ul class="pagination justify-content-center mb-0">
-                                    <li class="page-item <?= ($page <= 1) ? 'disabled' : '' ?>">
-                                        <a class="page-link" href="?page_num=<?= $page - 1 ?>&search=<?= urlencode($search) ?>&category=<?= $category_filter ?>&sort=<?= $sort ?>">Précédent</a>
+                                    <li class="page-item <?= $page <= 1 ? 'disabled' : '' ?>">
+                                        <a class="page-link" href="?page_num=<?= $page-1 ?>&search=<?= urlencode($search) ?>&category=<?= $category_filter ?>&sort=<?= $sort ?>">
+                                            <i class="fas fa-chevron-left small"></i> Précédent
+                                        </a>
                                     </li>
                                     
-                                    <?php for ($i = max(1, $page - 2); $i <= min($total_pages, $page + 2); $i++): ?>
-                                        <li class="page-item <?= ($i == $page) ? 'active' : '' ?>">
+                                    <?php
+                                    // Affichage limité de pages
+                                    $max_visible_pages = 5;
+                                    $start_page = max(1, min($page - floor($max_visible_pages/2), $total_pages - $max_visible_pages + 1));
+                                    $end_page = min($start_page + $max_visible_pages - 1, $total_pages);
+                                    
+                                    // Première page
+                                    if ($start_page > 1): ?>
+                                        <li class="page-item">
+                                            <a class="page-link" href="?page_num=1&search=<?= urlencode($search) ?>&category=<?= $category_filter ?>&sort=<?= $sort ?>">1</a>
+                                        </li>
+                                        <?php if ($start_page > 2): ?>
+                                            <li class="page-item disabled">
+                                                <span class="page-link">...</span>
+                                            </li>
+                                        <?php endif; ?>
+                                    <?php endif; ?>
+                                    
+                                    <!-- Pages visibles -->
+                                    <?php for ($i = $start_page; $i <= $end_page; $i++): ?>
+                                        <li class="page-item <?= $i == $page ? 'active' : '' ?>">
                                             <a class="page-link" href="?page_num=<?= $i ?>&search=<?= urlencode($search) ?>&category=<?= $category_filter ?>&sort=<?= $sort ?>"><?= $i ?></a>
                                         </li>
                                     <?php endfor; ?>
                                     
-                                    <li class="page-item <?= ($page >= $total_pages) ? 'disabled' : '' ?>">
-                                        <a class="page-link" href="?page_num=<?= $page + 1 ?>&search=<?= urlencode($search) ?>&category=<?= $category_filter ?>&sort=<?= $sort ?>">Suivant</a>
+                                    <!-- Dernière page -->
+                                    <?php if ($end_page < $total_pages): ?>
+                                        <?php if ($end_page < $total_pages - 1): ?>
+                                            <li class="page-item disabled">
+                                                <span class="page-link">...</span>
+                                            </li>
+                                        <?php endif; ?>
+                                        <li class="page-item">
+                                            <a class="page-link" href="?page_num=<?= $total_pages ?>&search=<?= urlencode($search) ?>&category=<?= $category_filter ?>&sort=<?= $sort ?>"><?= $total_pages ?></a>
+                                        </li>
+                                    <?php endif; ?>
+                                    
+                                    <li class="page-item <?= $page >= $total_pages ? 'disabled' : '' ?>">
+                                        <a class="page-link" href="?page_num=<?= $page+1 ?>&search=<?= urlencode($search) ?>&category=<?= $category_filter ?>&sort=<?= $sort ?>">
+                                            Suivant <i class="fas fa-chevron-right small"></i>
+                                        </a>
                                     </li>
                                 </ul>
                             </nav>
                         </div>
                     <?php endif; ?>
-                </div>
-                
-                <!-- Modal de confirmation de suppression -->
-                <div class="modal fade" id="deleteModal" tabindex="-1" aria-hidden="true">
-                    <div class="modal-dialog">
-                        <div class="modal-content">
-                            <div class="modal-header">
-                                <h5 class="modal-title">Confirmer la suppression</h5>
-                                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-                            </div>
-                            <div class="modal-body">
-                                <p>Êtes-vous sûr de vouloir supprimer le produit <strong id="product-name-placeholder"></strong> ?</p>
-                                <p class="text-danger"><i class="fas fa-exclamation-triangle me-2"></i> Cette action est irréversible.</p>
-                            </div>
-                            <div class="modal-footer">
-                                <form action="" method="post">
-                                    <input type="hidden" name="delete_product" id="delete-product-id">
-                                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Annuler</button>
-                                    <button type="submit" class="btn btn-danger">Supprimer</button>
-                                </form>
-                            </div>
-                        </div>
-                    </div>
                 </div>
                 
                 <!-- Pied de page -->
@@ -350,25 +345,5 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_product'])) {
     
     <!-- jQuery -->
     <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
-    
-    <script>
-        // Script pour le modal de suppression
-        document.addEventListener('DOMContentLoaded', function() {
-            const deleteModal = document.getElementById('deleteModal');
-            if (deleteModal) {
-                deleteModal.addEventListener('show.bs.modal', function(event) {
-                    const button = event.relatedTarget;
-                    const productId = button.getAttribute('data-product-id');
-                    const productName = button.getAttribute('data-product-name');
-                    
-                    const productIdInput = document.getElementById('delete-product-id');
-                    const productNamePlaceholder = document.getElementById('product-name-placeholder');
-                    
-                    productIdInput.value = productId;
-                    productNamePlaceholder.textContent = productName;
-                });
-            }
-        });
-    </script>
 </body>
 </html> 

@@ -101,12 +101,8 @@ class PaymentDAO
             $stmt->bindValue(':order_id', $orderId, PDO::PARAM_INT);
             $stmt->execute();
             
-            $payments = [];
-            while ($data = $stmt->fetch(PDO::FETCH_ASSOC)) {
-                $payments[] = new Payment($data);
-            }
-            
-            return $payments;
+            // Modification pour retourner directement un tableau associatif plutôt que des objets Payment
+            return $stmt->fetchAll(PDO::FETCH_ASSOC);
         } catch (PDOException $e) {
             error_log("Erreur lors de la récupération des paiements de la commande: " . $e->getMessage());
             return [];
@@ -148,6 +144,25 @@ class PaymentDAO
         } catch (PDOException $e) {
             error_log("Erreur lors de la récupération des paiements: " . $e->getMessage());
             return [];
+        }
+    }
+
+    /**
+     * Met à jour le statut de tous les paiements associés à une commande
+     * @param int $orderId ID de la commande
+     * @param string $status Nouveau statut
+     * @return bool True si succès, false sinon
+     */
+    public function updateStatusByOrderId($orderId, $status)
+    {
+        try {
+            $stmt = $this->_bd->prepare("UPDATE payments SET statut = :status WHERE order_id = :order_id");
+            $stmt->bindValue(':status', $status);
+            $stmt->bindValue(':order_id', $orderId, PDO::PARAM_INT);
+            return $stmt->execute();
+        } catch (PDOException $e) {
+            error_log("Erreur lors de la mise à jour du statut des paiements pour la commande #$orderId: " . $e->getMessage());
+            return false;
         }
     }
 } 

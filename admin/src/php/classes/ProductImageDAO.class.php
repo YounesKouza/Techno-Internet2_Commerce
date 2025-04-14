@@ -33,15 +33,59 @@ class ProductImageDAO
     }
 
     /**
-     * Ajoute une nouvelle image pour un produit
+     * Récupère toutes les images d'un produit
+     * @param int $productId ID du produit
+     * @return array Liste des images du produit
+     */
+    public function findByProductId($productId)
+    {
+        $query = "SELECT * FROM images_products WHERE produit_id = :produit_id ORDER BY ordre";
+        try {
+            $stmt = $this->_bd->prepare($query);
+            $stmt->bindValue(':produit_id', $productId, PDO::PARAM_INT);
+            $stmt->execute();
+            
+            $images = [];
+            while ($data = $stmt->fetch(PDO::FETCH_ASSOC)) {
+                $images[] = new ProductImage($data);
+            }
+            
+            return $images;
+        } catch (PDOException $e) {
+            error_log("Erreur lors de la récupération des images du produit: " . $e->getMessage());
+            return [];
+        }
+    }
+
+    /**
+     * Récupère toutes les images avec les noms de produits associés
+     * @return array Liste de toutes les images avec les noms de produits
+     */
+    public function findAllWithProductNames()
+    {
+        $query = "SELECT i.*, p.nom as product_name 
+                 FROM product_images i 
+                 LEFT JOIN products p ON i.product_id = p.id 
+                 ORDER BY i.category, i.name";
+        try {
+            $stmt = $this->_bd->prepare($query);
+            $stmt->execute();
+            
+            return $stmt->fetchAll(PDO::FETCH_ASSOC);
+        } catch (PDOException $e) {
+            error_log("Erreur lors de la récupération des images avec noms de produits: " . $e->getMessage());
+            return [];
+        }
+    }
+
+    /**
+     * Ajoute une nouvelle image de produit
      * @param array $data Données de l'image
      * @return int|false ID de la nouvelle image ou false si échec
      */
     public function create(array $data)
     {
-        $query = "INSERT INTO images_products (produit_id, url_image, ordre) 
-                  VALUES (:produit_id, :url_image, :ordre)";
-        
+        $query = "INSERT INTO images_products (produit_id, url_image, ordre) VALUES (:produit_id, :url_image, :ordre)";
         try {
             $this->_bd->beginTransaction();
             $stmt = $this->_bd->prepare($query);
@@ -56,13 +100,13 @@ class ProductImageDAO
             return $result ? $id : false;
         } catch (PDOException $e) {
             $this->_bd->rollback();
-            error_log("Erreur lors de la création de l'image: " . $e->getMessage());
+            error_log("Erreur lors de l'ajout de l'image du produit: " . $e->getMessage());
             return false;
         }
     }
 
     /**
-     * Met à jour une image
+     * Met à jour une image de produit
      * @param int $id ID de l'image
      * @param array $data Données à mettre à jour
      * @return bool Succès ou échec
@@ -73,7 +117,7 @@ class ProductImageDAO
         $params = [':id' => $id];
 
         foreach ($data as $key => $value) {
-            if ($key !== 'id' && $key !== 'date_ajout') {
+            if ($key !== 'id') {
                 $fieldsToUpdate[] = "$key = :$key";
                 $params[":$key"] = $value;
             }
@@ -97,13 +141,13 @@ class ProductImageDAO
             return $result;
         } catch (PDOException $e) {
             $this->_bd->rollback();
-            error_log("Erreur lors de la mise à jour de l'image: " . $e->getMessage());
+            error_log("Erreur lors de la mise à jour de l'image du produit: " . $e->getMessage());
             return false;
         }
     }
 
     /**
-     * Supprime une image
+     * Supprime une image de produit
      * @param int $id ID de l'image
      * @return bool Succès ou échec
      */
@@ -120,34 +164,8 @@ class ProductImageDAO
             return $result;
         } catch (PDOException $e) {
             $this->_bd->rollback();
-            error_log("Erreur lors de la suppression de l'image: " . $e->getMessage());
+            error_log("Erreur lors de la suppression de l'image du produit: " . $e->getMessage());
             return false;
-        }
-    }
-
-    /**
-     * Récupère toutes les images d'un produit, triées par ordre
-     * @param int $productId ID du produit
-     * @return array Liste des images
-     */
-    public function findByProductId($productId)
-    {
-        $query = "SELECT * FROM images_products WHERE produit_id = :produit_id ORDER BY ordre";
-        
-        try {
-            $stmt = $this->_bd->prepare($query);
-            $stmt->bindValue(':produit_id', $productId, PDO::PARAM_INT);
-            $stmt->execute();
-            
-            $images = [];
-            while ($data = $stmt->fetch(PDO::FETCH_ASSOC)) {
-                $images[] = new ProductImage($data);
-            }
-            
-            return $images;
-        } catch (PDOException $e) {
-            error_log("Erreur lors de la récupération des images du produit: " . $e->getMessage());
-            return [];
         }
     }
 
@@ -175,6 +193,31 @@ class ProductImageDAO
         } catch (PDOException $e) {
             $this->_bd->rollback();
             error_log("Erreur lors de la mise à jour de l'ordre des images: " . $e->getMessage());
+            return false;
+        }
+    }
+
+    /**
+     * Réinitialise toutes les images d'un produit comme non principales, sauf une
+     * @param int $productId ID du produit
+     * @param int $exceptImageId ID de l'image à exclure
+     * @return bool Succès ou échec
+     */
+    public function resetMainImages($productId, $exceptImageId)
+    {
+        $query = "UPDATE product_images SET is_main = FALSE WHERE product_id = :product_id AND id != :except_id";
+        try {
+            $this->_bd->beginTransaction();
+            $stmt = $this->_bd->prepare($query);
+            $stmt->bindValue(':product_id', $productId, PDO::PARAM_INT);
+            $stmt->bindValue(':except_id', $exceptImageId, PDO::PARAM_INT);
+            $result = $stmt->execute();
+            $this->_bd->commit();
+            
+            return $result;
+        } catch (PDOException $e) {
+            $this->_bd->rollback();
+            error_log("Erreur lors de la réinitialisation des images principales: " . $e->getMessage());
             return false;
         }
     }

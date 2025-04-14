@@ -16,6 +16,7 @@ if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'admin') {
 // Inclusion des fichiers nécessaires
 require_once '../src/php/utils/connexion.php';
 require_once '../src/php/utils/sidebar.php';
+require_once '../src/php/utils/all_includes.php';
 
 // Récupération des paramètres de filtre
 $start_date = isset($_GET['start_date']) ? $_GET['start_date'] : date('Y-m-d', strtotime('-12 months'));
@@ -28,109 +29,27 @@ if (strtotime($start_date) > strtotime($end_date)) {
     $end_date = $temp;
 }
 
-// Récupération des statistiques
+// Connexion à la base de données et initialisation des DAO
 $pdo = getPDO();
+$orderDAO = new OrderDAO($pdo);
+$productDAO = new ProductDAO($pdo);
+$categoryDAO = new CategoryDAO($pdo);
+$userDAO = new UserDAO($pdo);
 
 // Statistiques des ventes par mois pour la période sélectionnée
-$sales_by_month_query = "
-    SELECT 
-        to_char(date_commande, 'YYYY-MM') AS month,
-        SUM(montant_total) AS total
-    FROM orders
-    WHERE date_commande >= :start_date AND date_commande <= :end_date::date + interval '1 day'
-    AND statut != 'cancelled'
-    GROUP BY month
-    ORDER BY month ASC
-";
-
-$stmt = $pdo->prepare($sales_by_month_query);
-$stmt->bindParam(':start_date', $start_date);
-$stmt->bindParam(':end_date', $end_date);
-$stmt->execute();
-$sales_by_month = $stmt->fetchAll(PDO::FETCH_ASSOC);
+$sales_by_month = $orderDAO->getSalesByMonth($start_date, $end_date);
 
 // Statistiques des ventes par catégorie pour la période sélectionnée
-$sales_by_category_query = "
-    SELECT 
-        c.nom AS category_name,
-        COALESCE(SUM(ol.quantite * ol.prix_unitaire), 0) AS total
-    FROM categories c
-    LEFT JOIN products p ON c.id = p.categorie_id
-    LEFT JOIN order_lines ol ON p.id = ol.produit_id
-    LEFT JOIN orders o ON ol.order_id = o.id 
-        AND o.statut != 'cancelled'
-        AND o.date_commande >= :start_date 
-        AND o.date_commande <= :end_date::date + interval '1 day'
-    GROUP BY c.id, c.nom
-    ORDER BY total DESC
-";
-
-$stmt = $pdo->prepare($sales_by_category_query);
-$stmt->bindParam(':start_date', $start_date);
-$stmt->bindParam(':end_date', $end_date);
-$stmt->execute();
-$sales_by_category = $stmt->fetchAll(PDO::FETCH_ASSOC);
+$sales_by_category = $categoryDAO->getSalesByCategory($start_date, $end_date);
 
 // Top 10 produits les plus vendus pour la période sélectionnée
-$top_products_query = "
-    SELECT 
-        p.id,
-        p.titre AS name,
-        p.prix AS price,
-        COALESCE(SUM(ol.quantite), 0) AS quantity_sold,
-        COALESCE(SUM(ol.quantite * ol.prix_unitaire), 0) AS total_sales
-    FROM products p
-    LEFT JOIN order_lines ol ON p.id = ol.produit_id
-    LEFT JOIN orders o ON ol.order_id = o.id 
-        AND o.statut != 'cancelled'
-        AND o.date_commande >= :start_date 
-        AND o.date_commande <= :end_date::date + interval '1 day'
-    GROUP BY p.id, p.titre, p.prix
-    ORDER BY quantity_sold DESC
-    LIMIT 10
-";
-
-$stmt = $pdo->prepare($top_products_query);
-$stmt->bindParam(':start_date', $start_date);
-$stmt->bindParam(':end_date', $end_date);
-$stmt->execute();
-$top_products = $stmt->fetchAll(PDO::FETCH_ASSOC);
+$top_products = $productDAO->getTopSellingProducts($start_date, $end_date, 10);
 
 // Statistiques d'utilisateurs pour la période sélectionnée
-$users_by_month_query = "
-    SELECT 
-        to_char(date_inscription, 'YYYY-MM') AS month,
-        COUNT(*) AS count
-    FROM users
-    WHERE date_inscription >= :start_date 
-    AND date_inscription <= :end_date::date + interval '1 day'
-    GROUP BY month
-    ORDER BY month ASC
-";
-
-$stmt = $pdo->prepare($users_by_month_query);
-$stmt->bindParam(':start_date', $start_date);
-$stmt->bindParam(':end_date', $end_date);
-$stmt->execute();
-$users_by_month = $stmt->fetchAll(PDO::FETCH_ASSOC);
+$users_by_month = $userDAO->getUsersByMonth($start_date, $end_date);
 
 // Statistiques de commandes par statut pour la période sélectionnée
-$orders_by_status_query = "
-    SELECT 
-        statut,
-        COUNT(*) AS count
-    FROM orders
-    WHERE date_commande >= :start_date 
-    AND date_commande <= :end_date::date + interval '1 day'
-    GROUP BY statut
-    ORDER BY count DESC
-";
-
-$stmt = $pdo->prepare($orders_by_status_query);
-$stmt->bindParam(':start_date', $start_date);
-$stmt->bindParam(':end_date', $end_date);
-$stmt->execute();
-$orders_by_status = $stmt->fetchAll(PDO::FETCH_ASSOC);
+$orders_by_status = $orderDAO->getOrdersByStatus($start_date, $end_date);
 
 // Préparation des données pour les graphiques
 // Calcul du nombre de mois entre les dates
@@ -159,15 +78,15 @@ while ($current_date <= $end) {
 
 // Remplissage avec les données réelles de ventes
 foreach ($sales_by_month as $sale) {
-    if (isset($sales_data[$sale['month']])) {
-        $sales_data[$sale['month']] = floatval($sale['total']);
+    if (isset($sales_data[$sale->month])) {
+        $sales_data[$sale->month] = floatval($sale->total);
     }
 }
 
 // Remplissage avec les données réelles d'utilisateurs
 foreach ($users_by_month as $user) {
-    if (isset($users_data[$user['month']])) {
-        $users_data[$user['month']] = intval($user['count']);
+    if (isset($users_data[$user->month])) {
+        $users_data[$user->month] = intval($user->count);
     }
 }
 
@@ -184,8 +103,8 @@ $category_names = [];
 $category_sales = [];
 
 foreach ($sales_by_category as $cat) {
-    $category_names[] = $cat['category_name'];
-    $category_sales[] = floatval($cat['total']);
+    $category_names[] = $cat->category_name;
+    $category_sales[] = floatval($cat->total);
 }
 
 // Statistiques pour le graphique de statuts de commandes
@@ -193,8 +112,8 @@ $status_labels = [];
 $status_counts = [];
 
 foreach ($orders_by_status as $status) {
-    $status_labels[] = ucfirst($status['statut']);
-    $status_counts[] = intval($status['count']);
+    $status_labels[] = ucfirst($status->statut);
+    $status_counts[] = intval($status->count);
 }
 
 // Calcul des indicateurs clés
@@ -244,6 +163,25 @@ $avg_monthly_sales = $total_months > 0 ? $total_sales / $total_months : 0;
                     </div>
                 </div>
                 
+                <!-- Sélection de la période -->
+                <div class="card mb-4">
+                    <div class="card-body">
+                        <form action="" method="get" class="row align-items-end g-3">
+                            <div class="col-md-4">
+                                <label for="start_date" class="form-label">Date de début</label>
+                                <input type="date" class="form-control" id="start_date" name="start_date" value="<?= $start_date ?>">
+                            </div>
+                            <div class="col-md-4">
+                                <label for="end_date" class="form-label">Date de fin</label>
+                                <input type="date" class="form-control" id="end_date" name="end_date" value="<?= $end_date ?>">
+                            </div>
+                            <div class="col-md-4">
+                                <button type="submit" class="btn btn-primary w-100">Appliquer le filtre</button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+                
                 <!-- Indicateurs KPI -->
                 <div class="row mb-4">
                     <div class="col-md-3 mb-3">
@@ -251,10 +189,13 @@ $avg_monthly_sales = $total_months > 0 ? $total_sales / $total_months : 0;
                             <div class="card-body">
                                 <div class="d-flex justify-content-between align-items-center">
                                     <div>
-                                        <h6 class="mb-0">Total des ventes</h6>
+                                        <h6 class="mb-0">Chiffre d'affaires</h6>
                                         <h2 class="mt-2 mb-0"><?= number_format($total_sales, 2, ',', ' ') ?> €</h2>
                                     </div>
-                                    <i class="fas fa-euro-sign fa-2x value-icon"></i>
+                                    <i class="fas fa-euro-sign fa-2x"></i>
+                                </div>
+                                <div class="small mt-2">
+                                    <?= $start_date ?> - <?= $end_date ?>
                                 </div>
                             </div>
                         </div>
@@ -268,7 +209,10 @@ $avg_monthly_sales = $total_months > 0 ? $total_sales / $total_months : 0;
                                         <h6 class="mb-0">Commandes</h6>
                                         <h2 class="mt-2 mb-0"><?= $total_orders ?></h2>
                                     </div>
-                                    <i class="fas fa-shopping-cart fa-2x value-icon"></i>
+                                    <i class="fas fa-shopping-cart fa-2x"></i>
+                                </div>
+                                <div class="small mt-2">
+                                    <?= number_format($total_sales / ($total_orders ?: 1), 2, ',', ' ') ?> € panier moyen
                                 </div>
                             </div>
                         </div>
@@ -282,89 +226,55 @@ $avg_monthly_sales = $total_months > 0 ? $total_sales / $total_months : 0;
                                         <h6 class="mb-0">Nouveaux clients</h6>
                                         <h2 class="mt-2 mb-0"><?= $total_new_users ?></h2>
                                     </div>
-                                    <i class="fas fa-users fa-2x value-icon"></i>
+                                    <i class="fas fa-users fa-2x"></i>
+                                </div>
+                                <div class="small mt-2">
+                                    <?= round($total_new_users / ($total_months ?: 1), 1) ?> nouveaux clients/mois
                                 </div>
                             </div>
                         </div>
                     </div>
                     
                     <div class="col-md-3 mb-3">
-                        <div class="card dashboard-card bg-warning text-dark h-100">
+                        <div class="card dashboard-card bg-warning h-100">
                             <div class="card-body">
                                 <div class="d-flex justify-content-between align-items-center">
                                     <div>
-                                        <h6 class="mb-0">Moy. mensuelle</h6>
-                                        <h2 class="mt-2 mb-0"><?= number_format($avg_monthly_sales, 2, ',', ' ') ?> €</h2>
+                                        <h6 class="mb-0 text-dark">Ventes mensuelles</h6>
+                                        <h2 class="mt-2 mb-0 text-dark"><?= number_format($avg_monthly_sales, 2, ',', ' ') ?> €</h2>
                                     </div>
-                                    <i class="fas fa-chart-line fa-2x value-icon"></i>
+                                    <i class="fas fa-chart-line fa-2x text-dark"></i>
+                                </div>
+                                <div class="small mt-2 text-dark">
+                                    Moyenne sur <?= $total_months ?> mois
                                 </div>
                             </div>
                         </div>
                     </div>
                 </div>
                 
-                <!-- Filtres de dates -->
-                <div class="card filter-controls mb-4">
-                    <div class="card-body">
-                        <h5 class="mb-3"><i class="fas fa-calendar-alt me-2"></i> Filtrer par période</h5>
-                        <form class="row align-items-end" method="get" action="">
-                            <div class="col-md-4 mb-3 mb-md-0">
-                                <div class="form-group">
-                                    <label class="form-label">Date de début</label>
-                                    <input type="date" class="form-control" name="start_date" value="<?= $start_date ?>">
-                                </div>
-                            </div>
-                            <div class="col-md-4 mb-3 mb-md-0">
-                                <div class="form-group">
-                                    <label class="form-label">Date de fin</label>
-                                    <input type="date" class="form-control" name="end_date" value="<?= $end_date ?>">
-                                </div>
-                            </div>
-                            <div class="col-md-4 mb-3 mb-md-0">
-                                <div class="form-group">
-                                    <button type="submit" class="btn btn-primary w-100">
-                                        <i class="fas fa-filter me-2"></i> Appliquer le filtre
-                                    </button>
-                                </div>
-                            </div>
-                        </form>
-                        <div class="text-accent mt-3">
-                            <i class="fas fa-info-circle me-1"></i> 
-                            Période actuelle: <strong>du <?= date('d/m/Y', strtotime($start_date)) ?> au <?= date('d/m/Y', strtotime($end_date)) ?></strong>
-                        </div>
-                        <div class="mt-2">
-                            <a href="statistiques.php" class="btn btn-sm btn-outline-secondary">Réinitialiser</a>
-                            <a href="statistiques.php?start_date=<?= date('Y-m-d', strtotime('-1 month')) ?>&end_date=<?= date('Y-m-d') ?>" class="btn btn-sm btn-outline-secondary ms-1">Dernier mois</a>
-                            <a href="statistiques.php?start_date=<?= date('Y-m-d', strtotime('-3 months')) ?>&end_date=<?= date('Y-m-d') ?>" class="btn btn-sm btn-outline-secondary ms-1">Dernier trimestre</a>
-                            <a href="statistiques.php?start_date=<?= date('Y-m-d', strtotime('-1 year')) ?>&end_date=<?= date('Y-m-d') ?>" class="btn btn-sm btn-outline-secondary ms-1">Dernière année</a>
-                        </div>
-                    </div>
-                </div>
-                
-                <!-- Graphiques principaux -->
+                <!-- Graphiques -->
                 <div class="row mb-4">
                     <!-- Graphique des ventes mensuelles -->
-                    <div class="col-lg-8 mb-4">
-                        <div class="card shadow-sm h-100">
-                            <div class="card-header bg-transparent">
+                    <div class="col-md-8">
+                        <div class="card h-100">
+                            <div class="card-header bg-transparent py-3">
                                 <h5 class="mb-0">Évolution des ventes</h5>
                             </div>
                             <div class="card-body">
-                                <div style="height: 350px;">
-                                    <canvas id="salesChart"></canvas>
-                                </div>
+                                <canvas id="salesChart"></canvas>
                             </div>
                         </div>
                     </div>
                     
-                    <!-- Graphique des catégories -->
-                    <div class="col-lg-4 mb-4">
-                        <div class="card shadow-sm h-100">
-                            <div class="card-header bg-transparent">
+                    <!-- Graphique des ventes par catégorie -->
+                    <div class="col-md-4">
+                        <div class="card h-100">
+                            <div class="card-header bg-transparent py-3">
                                 <h5 class="mb-0">Ventes par catégorie</h5>
                             </div>
                             <div class="card-body">
-                                <canvas id="categoriesChart" height="250"></canvas>
+                                <canvas id="categoryChart"></canvas>
                             </div>
                         </div>
                     </div>
@@ -372,69 +282,57 @@ $avg_monthly_sales = $total_months > 0 ? $total_sales / $total_months : 0;
                 
                 <div class="row mb-4">
                     <!-- Graphique des nouveaux utilisateurs -->
-                    <div class="col-lg-6 mb-4">
-                        <div class="card shadow-sm h-100">
-                            <div class="card-header bg-transparent">
-                                <h5 class="mb-0">Nouveaux utilisateurs</h5>
+                    <div class="col-md-8">
+                        <div class="card h-100">
+                            <div class="card-header bg-transparent py-3">
+                                <h5 class="mb-0">Nouveaux clients</h5>
                             </div>
                             <div class="card-body">
-                                <canvas id="usersChart" height="200"></canvas>
+                                <canvas id="usersChart"></canvas>
                             </div>
                         </div>
                     </div>
                     
-                    <!-- Graphique des statuts de commandes -->
-                    <div class="col-lg-6 mb-4">
-                        <div class="card shadow-sm h-100">
-                            <div class="card-header bg-transparent">
+                    <!-- Graphique des statuts de commande -->
+                    <div class="col-md-4">
+                        <div class="card h-100">
+                            <div class="card-header bg-transparent py-3">
                                 <h5 class="mb-0">Commandes par statut</h5>
                             </div>
                             <div class="card-body">
-                                <canvas id="ordersStatusChart" height="200"></canvas>
+                                <canvas id="statusChart"></canvas>
                             </div>
                         </div>
                     </div>
                 </div>
                 
-                <!-- Top produits les plus vendus -->
-                <div class="card shadow-sm mb-4">
-                    <div class="card-header bg-transparent">
-                        <h5 class="mb-0">Top 10 des produits les plus vendus</h5>
+                <!-- Top 10 des produits les plus vendus -->
+                <div class="card mb-4">
+                    <div class="card-header bg-white d-flex justify-content-between align-items-center">
+                        <h5 class="card-title mb-0">Top 10 produits les plus vendus</h5>
                     </div>
-                    <div class="card-body p-0">
+                    <div class="card-body">
                         <div class="table-responsive">
-                            <table class="table admin-table table-hover mb-0">
+                            <table class="table table-striped table-hover">
                                 <thead>
                                     <tr>
-                                        <th>ID</th>
-                                        <th>Produit</th>
-                                        <th>Prix unitaire</th>
-                                        <th>Quantité vendue</th>
-                                        <th>Chiffre d'affaires</th>
-                                        <th>Actions</th>
+                                        <th>#</th>
+                                        <th>PRODUIT</th>
+                                        <th>PRIX UNITAIRE</th>
+                                        <th>QUANTITÉ VENDUE</th>
+                                        <th>CA GÉNÉRÉ</th>
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    <?php if (empty($top_products)): ?>
+                                    <?php foreach ($top_products as $index => $product): ?>
                                         <tr>
-                                            <td colspan="6" class="text-center py-3">Aucune donnée disponible</td>
-                                        </tr>
-                                    <?php else: ?>
-                                        <?php foreach ($top_products as $product): ?>
-                                            <tr>
-                                                <td><?= $product['id'] ?></td>
-                                                <td><?= htmlspecialchars($product['name']) ?></td>
-                                                <td><?= number_format($product['price'], 2, ',', ' ') ?> €</td>
-                                                <td><?= $product['quantity_sold'] ?></td>
-                                                <td><?= number_format($product['total_sales'], 2, ',', ' ') ?> €</td>
-                                                <td>
-                                                    <a href="update_meuble.php?id=<?= $product['id'] ?>" class="btn btn-sm btn-outline-primary">
-                                                        <i class="fas fa-edit"></i>
-                                                    </a>
-                                                </td>
+                                            <td><?= $index + 1 ?></td>
+                                            <td><?= htmlspecialchars($product->name) ?></td>
+                                            <td><?= number_format($product->price, 2, ',', ' ') ?> €</td>
+                                            <td><?= $product->quantite_vendue ?></td>
+                                            <td><?= number_format($product->ca_genere, 2, ',', ' ') ?> €</td>
                                             </tr>
                                         <?php endforeach; ?>
-                                    <?php endif; ?>
                                 </tbody>
                             </table>
                         </div>
@@ -459,28 +357,24 @@ $avg_monthly_sales = $total_months > 0 ? $total_sales / $total_months : 0;
     <!-- Initialisation des graphiques -->
     <script>
         document.addEventListener('DOMContentLoaded', function() {
-            // Configuration des couleurs
-            const primaryColor = '#2a3f54';
-            const secondaryColor = '#6c757d';
-            const successColor = '#198754';
-            const dangerColor = '#dc3545';
-            const warningColor = '#ffc107';
-            const infoColor = '#0dcaf0';
-            const accentColor = '#1ABB9C';
+            // Chart.js configuration globale
+            Chart.defaults.font.family = "'Poppins', 'Helvetica', 'Arial', sans-serif";
+            Chart.defaults.font.size = 12;
+            Chart.defaults.color = '#555';
             
             // Graphique des ventes mensuelles
             const salesCtx = document.getElementById('salesChart').getContext('2d');
-            new Chart(salesCtx, {
+            const salesChart = new Chart(salesCtx, {
                 type: 'line',
                 data: {
                     labels: <?= json_encode($months_labels) ?>,
                     datasets: [{
-                        label: 'Ventes (€)',
+                        label: 'Chiffre d\'affaires (€)',
                         data: <?= json_encode($sales_values) ?>,
-                        backgroundColor: 'rgba(26, 187, 156, 0.1)',
-                        borderColor: accentColor,
+                        backgroundColor: 'rgba(13, 110, 253, 0.2)',
+                        borderColor: 'rgba(13, 110, 253, 1)',
                         borderWidth: 2,
-                        tension: 0.3,
+                        tension: 0.1,
                         fill: true
                     }]
                 },
@@ -494,31 +388,17 @@ $avg_monthly_sales = $total_months > 0 ? $total_sales / $total_months : 0;
                         tooltip: {
                             callbacks: {
                                 label: function(context) {
-                                    return new Intl.NumberFormat('fr-FR', { 
-                                        style: 'currency', 
-                                        currency: 'EUR' 
-                                    }).format(context.raw);
+                                    return context.parsed.y.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, " ") + ' €';
                                 }
                             }
                         }
                     },
                     scales: {
-                        x: {
-                            grid: {
-                                display: false
-                            },
-                            ticks: {
-                                maxRotation: 45,
-                                minRotation: 45,
-                                autoSkip: true,
-                                maxTicksLimit: 20
-                            }
-                        },
                         y: {
                             beginAtZero: true,
                             ticks: {
                                 callback: function(value) {
-                                    return value + ' €';
+                                    return value.toFixed(0).replace(/\B(?=(\d{3})+(?!\d))/g, " ") + ' €';
                                 }
                             }
                         }
@@ -526,37 +406,47 @@ $avg_monthly_sales = $total_months > 0 ? $total_sales / $total_months : 0;
                 }
             });
             
-            // Graphique des catégories
-            const categoryColors = [accentColor, primaryColor, successColor, warningColor, infoColor, dangerColor, secondaryColor];
-            const categoriesCtx = document.getElementById('categoriesChart').getContext('2d');
-            new Chart(categoriesCtx, {
+            // Graphique des ventes par catégorie
+            const categoryCtx = document.getElementById('categoryChart').getContext('2d');
+            const categoryChart = new Chart(categoryCtx, {
                 type: 'doughnut',
                 data: {
                     labels: <?= json_encode($category_names) ?>,
                     datasets: [{
                         data: <?= json_encode($category_sales) ?>,
-                        backgroundColor: categoryColors,
-                        borderColor: '#ffffff',
+                        backgroundColor: [
+                            'rgba(13, 110, 253, 0.7)',   // Bleu
+                            'rgba(25, 135, 84, 0.7)',    // Vert
+                            'rgba(220, 53, 69, 0.7)',    // Rouge
+                            'rgba(255, 193, 7, 0.7)',    // Jaune
+                            'rgba(111, 66, 193, 0.7)',   // Violet
+                            'rgba(23, 162, 184, 0.7)',   // Cyan
+                            'rgba(102, 16, 242, 0.7)',   // Indigo
+                            'rgba(253, 126, 20, 0.7)',   // Orange
+                            'rgba(32, 201, 151, 0.7)',   // Teal
+                            'rgba(108, 117, 125, 0.7)',  // Gris
+                        ],
                         borderWidth: 1
                     }]
                 },
                 options: {
                     responsive: true,
+                    maintainAspectRatio: false,
                     plugins: {
                         legend: {
-                            position: 'bottom'
+                            position: 'right',
+                            labels: {
+                                boxWidth: 12
+                            }
                         },
                         tooltip: {
                             callbacks: {
                                 label: function(context) {
                                     const label = context.label || '';
-                                    const value = context.raw;
-                                    const total = context.dataset.data.reduce((acc, val) => acc + val, 0);
-                                    const percentage = Math.round((value / total) * 100);
-                                    return `${label}: ${new Intl.NumberFormat('fr-FR', { 
-                                        style: 'currency', 
-                                        currency: 'EUR' 
-                                    }).format(value)} (${percentage}%)`;
+                                    const value = context.parsed || 0;
+                                    const total = context.dataset.data.reduce((a, b) => a + b, 0);
+                                    const percentage = total > 0 ? Math.round((value / total) * 100) : 0;
+                                    return label + ': ' + value.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, " ") + ' € (' + percentage + '%)';
                                 }
                             }
                         }
@@ -566,20 +456,21 @@ $avg_monthly_sales = $total_months > 0 ? $total_sales / $total_months : 0;
             
             // Graphique des nouveaux utilisateurs
             const usersCtx = document.getElementById('usersChart').getContext('2d');
-            new Chart(usersCtx, {
+            const usersChart = new Chart(usersCtx, {
                 type: 'bar',
                 data: {
                     labels: <?= json_encode($months_labels) ?>,
                     datasets: [{
-                        label: 'Nouveaux utilisateurs',
+                        label: 'Nouveaux clients',
                         data: <?= json_encode($users_values) ?>,
-                        backgroundColor: accentColor,
-                        borderColor: '#ffffff',
+                        backgroundColor: 'rgba(23, 162, 184, 0.7)',
+                        borderColor: 'rgba(23, 162, 184, 1)',
                         borderWidth: 1
                     }]
                 },
                 options: {
                     responsive: true,
+                    maintainAspectRatio: false,
                     plugins: {
                         legend: {
                             display: false
@@ -589,6 +480,7 @@ $avg_monthly_sales = $total_months > 0 ? $total_sales / $total_months : 0;
                         y: {
                             beginAtZero: true,
                             ticks: {
+                                stepSize: 1,
                                 precision: 0
                             }
                         }
@@ -597,33 +489,41 @@ $avg_monthly_sales = $total_months > 0 ? $total_sales / $total_months : 0;
             });
             
             // Graphique des statuts de commandes
-            const statusColors = [successColor, warningColor, primaryColor, dangerColor, secondaryColor];
-            const ordersStatusCtx = document.getElementById('ordersStatusChart').getContext('2d');
-            new Chart(ordersStatusCtx, {
+            const statusCtx = document.getElementById('statusChart').getContext('2d');
+            const statusChart = new Chart(statusCtx, {
                 type: 'pie',
                 data: {
                     labels: <?= json_encode($status_labels) ?>,
                     datasets: [{
                         data: <?= json_encode($status_counts) ?>,
-                        backgroundColor: statusColors,
-                        borderColor: '#ffffff',
+                        backgroundColor: [
+                            'rgba(25, 135, 84, 0.7)',   // Vert (completed)
+                            'rgba(13, 110, 253, 0.7)',  // Bleu (processing)
+                            'rgba(255, 193, 7, 0.7)',   // Jaune (pending)
+                            'rgba(220, 53, 69, 0.7)',   // Rouge (cancelled)
+                            'rgba(108, 117, 125, 0.7)', // Gris (autres)
+                        ],
                         borderWidth: 1
                     }]
                 },
                 options: {
                     responsive: true,
+                    maintainAspectRatio: false,
                     plugins: {
                         legend: {
-                            position: 'bottom'
+                            position: 'right',
+                            labels: {
+                                boxWidth: 12
+                            }
                         },
                         tooltip: {
                             callbacks: {
                                 label: function(context) {
                                     const label = context.label || '';
-                                    const value = context.raw;
-                                    const total = context.dataset.data.reduce((acc, val) => acc + val, 0);
-                                    const percentage = Math.round((value / total) * 100);
-                                    return `${label}: ${value} (${percentage}%)`;
+                                    const value = context.parsed || 0;
+                                    const total = context.dataset.data.reduce((a, b) => a + b, 0);
+                                    const percentage = total > 0 ? Math.round((value / total) * 100) : 0;
+                                    return label + ': ' + value + ' (' + percentage + '%)';
                                 }
                             }
                         }

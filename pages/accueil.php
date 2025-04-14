@@ -9,16 +9,16 @@ $titre_page = 'Accueil';
 // Ajout d'une classe spéciale pour le main de la page d'accueil
 $main_class = 'home-page';
 
+// Inclusion des fichiers nécessaires
+require_once __DIR__ . '/../admin/src/php/utils/connexion.php';
+require_once __DIR__ . '/../admin/src/php/utils/all_includes.php';
+
 // --- Utilisation des DAO ---
 // L'instance $pdo est maintenant créée dans all_includes.php
 
 // Instanciation des DAO nécessaires
 $productDAO = new ProductDAO($pdo);
 $categoryDAO = new CategoryDAO($pdo);
-
-// Récupération des produits à l'honneur (Exemple: les 4 plus récents)
-// Note: findFeatured pourrait être une méthode dédiée dans ProductDAO
-$featured_products = $productDAO->findAllActive(null, null, 'p.date_creation DESC', 4, 0);
 
 // Récupération des catégories principales
 $categories = $categoryDAO->findLimitedSortedById(4); // Récupérer 4 catégories
@@ -40,50 +40,6 @@ $categories = $categoryDAO->findLimitedSortedById(4); // Récupérer 4 catégori
     </div>
 </section>
 
-<!-- Produits à la une -->
-<section class="mb-5">
-    <h2 class="text-center mb-4">Nos produits à la une</h2>
-    
-    <div class="row">
-        <?php if (empty($featured_products)): ?>
-            <div class="col-12 text-center">
-                <p>Aucun produit à la une pour le moment.</p>
-            </div>
-        <?php else: ?>
-            <?php foreach ($featured_products as $product): ?>
-                <div class="col-sm-6 col-lg-3 mb-4">
-                    <div class="card h-100 product-card">
-                        <a href="index_.php?page=produit_details&id=<?= $product->id ?>" class="product-img-link">
-                            <div class="product-img">
-                                <img src="<?= htmlspecialchars($product->image_principale ? '/Exos/Techno-internet2_commerce/'.$product->image_principale : '/Exos/Techno-internet2_commerce/admin/public/img/products/default.jpg') ?>" 
-                                     alt="<?= htmlspecialchars($product->titre) ?>">
-                            </div>
-                        </a>
-                        <div class="card-body d-flex flex-column">
-                            <span class="category-badge mb-2"><?= htmlspecialchars($product->categorie_nom) ?></span>
-                            <h5 class="card-title flex-grow-1">
-                                <a href="index_.php?page=produit_details&id=<?= $product->id ?>" class="text-decoration-none text-dark">
-                                    <?= htmlspecialchars($product->titre) ?>
-                                </a>
-                            </h5>
-                            <p class="product-price mb-2"><?= number_format($product->prix, 2, ',', ' ') ?> €</p>
-                            <div class="mt-auto">
-                                <button class="btn btn-sm btn-primary w-100 add-to-cart" data-product-id="<?= $product->id ?>">
-                                    <i class="fas fa-cart-plus"></i> Ajouter au panier
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            <?php endforeach; ?>
-        <?php endif; ?>
-    </div>
-    
-    <div class="text-center mt-4">
-        <a href="index_.php?page=catalogue" class="btn btn-lg btn-outline-primary">Voir tous les produits</a>
-    </div>
-</section>
-
 <!-- Catégories principales -->
 <section class="mb-5">
     <h2 class="text-center mb-4">Explorez nos catégories</h2>
@@ -97,7 +53,7 @@ $categories = $categoryDAO->findLimitedSortedById(4); // Récupérer 4 catégori
             <?php foreach ($categories as $category): ?>
                 <div class="col-md-6 col-lg-3 mb-4">
                     <div class="category-card">
-                        <img src="/Exos/Techno-internet2_commerce/admin/public/images/fond/<?= $category->id ?>.jpg" alt="<?= htmlspecialchars($category->nom) ?>">
+                        <img src="admin/public/images/fond/<?= $category->id ?>.jpg" alt="<?= htmlspecialchars($category->nom) ?>">
                         <div class="category-overlay">
                             <h3 class="mb-2"><?= htmlspecialchars($category->nom) ?></h3>
                             <a href="index_.php?page=catalogue&category=<?= $category->id ?>" class="btn btn-sm btn-primary">

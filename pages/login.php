@@ -6,6 +6,10 @@
 // Titre de la page
 $titre_page = 'Connexion';
 
+// Inclusion des classes nécessaires
+require_once __DIR__ . '/../admin/src/php/utils/connexion.php';
+require_once __DIR__ . '/../admin/src/php/utils/all_includes.php';
+
 // Vérifier si l'utilisateur est déjà connecté
 if (isset($_SESSION['user_id'])) {
     // Redirection en fonction du rôle
@@ -17,6 +21,10 @@ if (isset($_SESSION['user_id'])) {
         exit;
     }
 }
+
+// Initialisation des objets DAO et métier
+$pdo = getPDO();
+$userDAO = new UserDAO($pdo);
 
 // Traitement du formulaire de connexion
 $error_msg = '';
@@ -30,26 +38,38 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (empty($username) || empty($password)) {
         $error_msg = 'Veuillez remplir tous les champs';
     } else {
-        // Connexion à la base de données
-        $pdo = getPDO();
+        // Authentification de l'utilisateur
+        // Tentons d'abord par email
+        $user = $userDAO->findByEmail($username);
         
-        // Recherche de l'utilisateur
-        $stmt = $pdo->prepare("SELECT id, nom as username, mot_de_passe as password, role FROM users WHERE nom = ? OR email = ?");
-        $stmt->execute([$username, $username]);
-        $user = $stmt->fetch();
+        // Si non trouvé, on essaie avec le nom d'utilisateur
+        if (!$user) {
+            // Recherche par nom d'utilisateur (à ajouter à UserDAO si besoin)
+            $users = $userDAO->findAll();
+            foreach ($users as $u) {
+                if ($u->nom === $username) {
+                    $user = $u;
+                    break;
+                }
+            }
+        }
         
-        if ($user && password_verify($password, $user['password'])) {
+        // Vérification du mot de passe
+        if ($user && password_verify($password, $user->mot_de_passe)) {
             // Connexion réussie, enregistrement des données de session
-            $_SESSION['user_id'] = $user['id'];
-            $_SESSION['username'] = $user['username'];
-            $_SESSION['role'] = $user['role'];
+            $_SESSION['user_id'] = $user->id;
+            $_SESSION['username'] = $user->nom;
+            $_SESSION['role'] = $user->role;
             
             // Mise à jour de la date de dernière connexion
-            $update_stmt = $pdo->prepare("UPDATE users SET date_inscription = CURRENT_TIMESTAMP WHERE id = ?");
-            $update_stmt->execute([$user['id']]);
+            $userData = [
+                'id' => $user->id,
+                'date_derniere_connexion' => date('Y-m-d H:i:s')
+            ];
+            $userDAO->update($userData);
             
             // Redirection en fonction du rôle
-            if ($user['role'] === 'admin') {
+            if ($user->role === 'admin') {
                 header('Location: admin/pages/accueil_admin.php');
                 exit;
             } else {

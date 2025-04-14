@@ -14,80 +14,66 @@ $sort = isset($_GET['sort']) ? htmlspecialchars($_GET['sort']) : 'name_asc';
 $page_num = isset($_GET['page_num']) ? intval($_GET['page_num']) : 1;
 $per_page = 12;
 
-// Construction de la requête SQL de base
-$sql = "SELECT p.*, c.nom as category_name 
-        FROM products p 
-        JOIN categories c ON p.categorie_id = c.id 
-        WHERE p.actif = true";
+// Inclusion des fichiers nécessaires
+require_once __DIR__ . '/../admin/src/php/utils/connexion.php';
+require_once __DIR__ . '/../admin/src/php/utils/all_includes.php';
 
-$params = [];
+// Initialisation des objets DAO et des classes métier
+$pdo = getPDO();
+$productDAO = new ProductDAO($pdo);
+$categoryDAO = new CategoryDAO($pdo);
 
-// Ajout des filtres à la requête
-if ($category_id) {
-    $sql .= " AND p.categorie_id = ?";
-    $params[] = $category_id;
-}
-
-if (!empty($search)) {
-    $sql .= " AND (p.titre ILIKE ? OR p.description ILIKE ?)";
-    $search_param = '%' . $search . '%';
-    $params[] = $search_param;
-    $params[] = $search_param;
-}
-
-// Définition de l'ordre de tri
-$order_by = "";
+// Détermination de la clause ORDER BY directement
+$orderBy = 'p.titre ASC'; // Valeur par défaut
 switch ($sort) {
     case 'price_asc':
-        $order_by = "ORDER BY p.prix ASC";
+        $orderBy = 'p.prix ASC';
         break;
     case 'price_desc':
-        $order_by = "ORDER BY p.prix DESC";
+        $orderBy = 'p.prix DESC';
         break;
     case 'name_desc':
-        $order_by = "ORDER BY p.titre DESC";
+        $orderBy = 'p.titre DESC';
         break;
     case 'newest':
-        $order_by = "ORDER BY p.date_creation DESC";
+        $orderBy = 'p.date_creation DESC';
         break;
-    default:
-        $order_by = "ORDER BY p.titre ASC";
 }
 
 // Calcul pour la pagination
-$pdo = getPDO();
-$count_sql = "SELECT COUNT(*) as total FROM products p JOIN categories c ON p.categorie_id = c.id WHERE p.actif = true";
-
-// Ajout des mêmes filtres à la requête de comptage
-if ($category_id) {
-    $count_sql .= " AND p.categorie_id = ?";
-}
-
 if (!empty($search)) {
-    $count_sql .= " AND (p.titre ILIKE ? OR p.description ILIKE ?)";
+    // Utiliser la méthode search mais récupérer tous les résultats pour compter
+    $all_search_results = $productDAO->search($search, true, null, null, $category_id);
+    $total_products = count($all_search_results);
+    // Récupérer uniquement la page courante
+    $products = $productDAO->search($search, true, $per_page, ($page_num - 1) * $per_page, $category_id, $orderBy);
+} else {
+    $total_products = $productDAO->countAll($category_id, true);
+    $products = $productDAO->findAllActive($category_id, true, $orderBy, $per_page, ($page_num - 1) * $per_page);
+    
+    // Débogage: afficher les produits récupérés dans un commentaire HTML
+    if (count($products) === 0) {
+        echo "<!-- Aucun produit trouvé avec findAllActive. Total comptés: $total_products -->";
+        // Vérifier avec la méthode findAll sans le filtre actif
+        $all_products = $productDAO->findAll($category_id, null, $orderBy, $per_page, ($page_num - 1) * $per_page);
+        echo "<!-- Nombre de produits sans filtre actif: " . count($all_products) . " -->";
+        if (count($all_products) > 0) {
+            // Utiliser les produits non filtrés pour le débogage
+            // En production, on ne ferait pas cela, mais c'est utile pour diagnostiquer
+            $products = $all_products;
+            echo "<!-- Utilisation des produits non filtrés pour le débogage -->";
+        }
+    } else {
+        echo "<!-- " . count($products) . " produits trouvés. -->";
+    }
 }
 
-$count_stmt = $pdo->prepare($count_sql);
-$count_stmt->execute($params);
-$total_products = $count_stmt->fetchColumn();
-
+// Calcul de la pagination - cette logique peut rester ou être déplacée si besoin
 $total_pages = ceil($total_products / $per_page);
 $page_num = max(1, min($page_num, $total_pages));
-$offset = ($page_num - 1) * $per_page;
-
-// Requête principale avec l'ordre de tri et la pagination
-$sql .= " " . $order_by . " LIMIT ? OFFSET ?";
-$params[] = $per_page;
-$params[] = $offset;
-
-// Exécution de la requête principale
-$stmt = $pdo->prepare($sql);
-$stmt->execute($params);
-$products = $stmt->fetchAll();
 
 // Récupération des catégories pour le filtre
-$categories_stmt = $pdo->query("SELECT id, nom FROM categories ORDER BY nom");
-$categories = $categories_stmt->fetchAll();
+$categories = $categoryDAO->findAll();
 ?>
 
 <div class="container py-4">
@@ -111,8 +97,8 @@ $categories = $categories_stmt->fetchAll();
             <select name="category" id="category-filter" class="form-select">
                 <option value="">Toutes les catégories</option>
                 <?php foreach ($categories as $category): ?>
-                    <option value="<?= $category['id'] ?>" <?= $category_id == $category['id'] ? 'selected' : '' ?>>
-                        <?= htmlspecialchars($category['nom']) ?> (<?= /* TODO: Afficher le compte par catégorie */ '?' ?>)
+                    <option value="<?= $category->id ?>" <?= $category_id == $category->id ? 'selected' : '' ?>>
+                        <?= htmlspecialchars($category->nom) ?> (<?= $categoryDAO->countProducts($category->id) ?>)
                     </option>
                 <?php endforeach; ?>
             </select>
@@ -146,22 +132,32 @@ $categories = $categories_stmt->fetchAll();
             <?php foreach ($products as $product): ?>
                 <div class="col-sm-6 col-lg-4 col-xl-3 mb-4">
                     <div class="card h-100 product-card">
-                        <a href="index_.php?page=produit_details&id=<?= $product['id'] ?>" class="product-img-link">
+                        <a href="index_.php?page=produit_details&id=<?= $product->id ?>" class="product-img-link">
                             <div class="product-img">
-                                <img src="<?= htmlspecialchars($product['image_principale'] ?? 'admin/public/img/products/default.jpg') ?>" 
-                                     alt="<?= htmlspecialchars($product['titre']) ?>">
+                                <?php 
+                                // Correction du chemin d'image
+                                $image_path = $product->image_principale;
+                                if (empty($image_path)) {
+                                    $image_path = 'admin/public/images/default.jpg';
+                                } elseif (strpos($image_path, 'admin/') !== 0) {
+                                    // Ajouter le préfixe si nécessaire
+                                    $image_path = 'admin/' . ltrim($image_path, '/');
+                                }
+                                ?>
+                                <img src="<?= htmlspecialchars($image_path) ?>" 
+                                     alt="<?= htmlspecialchars($product->titre) ?>">
                             </div>
                         </a>
                         <div class="card-body d-flex flex-column">
-                            <span class="category-badge mb-2"><?= htmlspecialchars($product['category_name']) ?></span>
+                            <span class="category-badge mb-2"><?= htmlspecialchars($product->categorie_nom) ?></span>
                             <h5 class="card-title flex-grow-1">
-                                <a href="index_.php?page=produit_details&id=<?= $product['id'] ?>" class="text-decoration-none text-dark">
-                                    <?= htmlspecialchars($product['titre']) ?>
+                                <a href="index_.php?page=produit_details&id=<?= $product->id ?>" class="text-decoration-none text-dark">
+                                    <?= htmlspecialchars($product->titre) ?>
                                 </a>
                             </h5>
-                            <p class="product-price mb-2"><?= number_format($product['prix'], 2, ',', ' ') ?> €</p>
+                            <p class="product-price mb-2"><?= number_format($product->prix, 2, ',', ' ') ?> €</p>
                             <div class="mt-auto">
-                                <button class="btn btn-sm btn-primary w-100 add-to-cart" data-product-id="<?= $product['id'] ?>">
+                                <button class="btn btn-sm btn-primary w-100 add-to-cart" data-product-id="<?= $product->id ?>">
                                     <i class="fas fa-cart-plus"></i> Ajouter au panier
                                 </button>
                             </div>

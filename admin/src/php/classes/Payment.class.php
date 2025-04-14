@@ -23,6 +23,7 @@ class Payment
         if (isset($this->_attributs[$champ])) {
             return $this->_attributs[$champ];
         }
+        return null; // Retourner null si l'attribut n'existe pas
     }
 
     public function __set($champ, $valeur)

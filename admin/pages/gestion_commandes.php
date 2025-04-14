@@ -16,6 +16,7 @@ if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'admin') {
 // Inclusion des fichiers nécessaires
 require_once '../src/php/utils/connexion.php';
 require_once '../src/php/utils/sidebar.php';
+require_once '../src/php/utils/all_includes.php';
 
 // Initialisation des variables
 $pdo = getPDO();
@@ -23,6 +24,12 @@ $error = "";
 $success = "";
 $order_detail = null;
 $order_lines = [];
+
+// Initialisation des DAO
+$orderDAO = new OrderDAO($pdo);
+$userDAO = new UserDAO($pdo);
+$productDAO = new ProductDAO($pdo);
+$paymentDAO = new PaymentDAO($pdo);
 
 // Pagination
 $page = isset($_GET['page']) ? max(1, intval($_GET['page'])) : 1;
@@ -33,46 +40,15 @@ $offset = ($page - 1) * $limit;
 $status_filter = isset($_GET['status']) ? $_GET['status'] : '';
 $search = isset($_GET['search']) ? $_GET['search'] : '';
 
-// Construction de la requête SQL avec les filtres
-$query = "SELECT o.*, u.nom as client_name, u.email as client_email 
-          FROM orders o
-          LEFT JOIN users u ON o.utilisateur_id = u.id
-          WHERE 1=1";
+// Récupération des commandes avec filtres et pagination
+$orders = $orderDAO->findAllWithFilters($search, $status_filter, $limit, $offset);
 
-$params = [];
-
-if (!empty($status_filter)) {
-    $query .= " AND o.statut = ?";
-    $params[] = $status_filter;
-}
-
-if (!empty($search)) {
-    $query .= " AND (u.nom ILIKE ? OR u.email ILIKE ? OR CAST(o.id AS TEXT) LIKE ?)";
-    $search_param = '%' . $search . '%';
-    $params[] = $search_param;
-    $params[] = $search_param;
-    $params[] = $search_param;
-}
-
-// Comptage du nombre total de commandes
-$count_query = str_replace("o.*, u.nom as client_name, u.email as client_email", "COUNT(*) as count", $query);
-$stmt = $pdo->prepare($count_query);
-$stmt->execute($params);
-$total_rows = $stmt->fetch()['count'];
+// Récupération du nombre total de commandes pour la pagination
+$total_rows = $orderDAO->countWithFilters($search, $status_filter);
 $total_pages = ceil($total_rows / $limit);
 
-// Ajout de l'ordre et de la pagination à la requête finale
-$query .= " ORDER BY o.date_commande DESC LIMIT ? OFFSET ?";
-$params[] = $limit;
-$params[] = $offset;
-
-// Exécution de la requête
-$stmt = $pdo->prepare($query);
-$stmt->execute($params);
-$orders = $stmt->fetchAll();
-
 // Récupération des statuts disponibles pour le filtre
-$statuses = $pdo->query("SELECT DISTINCT statut FROM orders ORDER BY statut")->fetchAll(PDO::FETCH_COLUMN);
+$statuses = $orderDAO->getAllStatuses();
 
 // Traitement des actions
 if (isset($_GET['action']) && isset($_GET['order_id'])) {
@@ -80,9 +56,7 @@ if (isset($_GET['action']) && isset($_GET['order_id'])) {
     $action = $_GET['action'];
     
     // Vérification de l'existence de la commande
-    $stmt = $pdo->prepare("SELECT * FROM orders WHERE id = ?");
-    $stmt->execute([$order_id]);
-    $order = $stmt->fetch();
+    $order = $orderDAO->findById($order_id);
     
     if (!$order) {
         $error = "La commande n'existe pas";
@@ -91,32 +65,13 @@ if (isset($_GET['action']) && isset($_GET['order_id'])) {
             switch ($action) {
                 case 'view':
                     // Récupération des détails de la commande
-                    $stmt = $pdo->prepare("
-                        SELECT o.*, u.nom as client_name, u.email as client_email, 
-                               u.adresse as client_address, u.telephone as client_phone
-                        FROM orders o
-                        LEFT JOIN users u ON o.utilisateur_id = u.id
-                        WHERE o.id = ?
-                    ");
-                    $stmt->execute([$order_id]);
-                    $order_detail = $stmt->fetch();
+                    $order_detail = $orderDAO->findDetailById($order_id);
                     
                     // Récupération des lignes de commande
-                    $stmt = $pdo->prepare("
-                        SELECT ol.*, p.titre as product_name, p.image_principale as product_image
-                        FROM order_lines ol
-                        LEFT JOIN products p ON ol.produit_id = p.id
-                        WHERE ol.order_id = ?
-                    ");
-                    $stmt->execute([$order_id]);
-                    $order_lines = $stmt->fetchAll();
+                    $order_lines = $orderDAO->findOrderLinesByOrderId($order_id);
                     
                     // Récupération des paiements associés
-                    $stmt = $pdo->prepare("
-                        SELECT * FROM payments WHERE order_id = ?
-                    ");
-                    $stmt->execute([$order_id]);
-                    $payments = $stmt->fetchAll();
+                    $payments = $paymentDAO->findByOrderId($order_id);
                     
                     $order_detail['payments'] = $payments;
                     break;
@@ -124,13 +79,11 @@ if (isset($_GET['action']) && isset($_GET['order_id'])) {
                 case 'update_status':
                     if (isset($_POST['status'])) {
                         $new_status = $_POST['status'];
-                        $stmt = $pdo->prepare("UPDATE orders SET statut = ? WHERE id = ?");
-                        $stmt->execute([$new_status, $order_id]);
+                        $orderDAO->updateStatus($order_id, $new_status);
                         
                         // Si le statut est "completed", mettre à jour le statut du paiement
                         if ($new_status === 'completed') {
-                            $stmt = $pdo->prepare("UPDATE payments SET statut = 'payé' WHERE order_id = ?");
-                            $stmt->execute([$order_id]);
+                            $paymentDAO->updateStatusByOrderId($order_id, 'payé');
                         }
                         
                         $success = "Le statut de la commande #$order_id a été mis à jour avec succès";
@@ -138,22 +91,13 @@ if (isset($_GET['action']) && isset($_GET['order_id'])) {
                     break;
                     
                 case 'delete':
-                    // Suppression des lignes de commande
-                    $stmt = $pdo->prepare("DELETE FROM order_lines WHERE order_id = ?");
-                    $stmt->execute([$order_id]);
-                    
-                    // Suppression des paiements
-                    $stmt = $pdo->prepare("DELETE FROM payments WHERE order_id = ?");
-                    $stmt->execute([$order_id]);
-                    
-                    // Suppression de la commande
-                    $stmt = $pdo->prepare("DELETE FROM orders WHERE id = ?");
-                    $stmt->execute([$order_id]);
+                    // Suppression de la commande et de ses dépendances
+                    $orderDAO->deleteWithDependencies($order_id);
                     
                     $success = "La commande #$order_id a été supprimée avec succès";
                     break;
             }
-        } catch (PDOException $e) {
+        } catch (Exception $e) {
             $error = "Erreur lors du traitement de l'action : " . $e->getMessage();
         }
     }

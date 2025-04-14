@@ -8,65 +8,18 @@
 $titre_page = 'Votre panier';
 $js_specifique = 'panier'; // Ajout d'un identifiant pour le JS spécifique
 
-// Initialisation du panier si nécessaire
-if (!isset($_SESSION['panier'])) {
-    $_SESSION['panier'] = [];
-}
+// Inclusion des classes nécessaires
+require_once __DIR__ . '/../admin/src/php/utils/connexion.php';
+require_once __DIR__ . '/../admin/src/php/utils/all_includes.php';
 
-// Récupération de la liste des produits du panier avec leurs détails
-$panier_avec_details = [];
-$total_panier = 0;
+// Initialisation des objets DAO
+$pdo = getPDO();
+$cartDAO = new CartDAO($pdo);
 
-if (!empty($_SESSION['panier'])) {
-    $pdo = getPDO();
-    $productIds = array_keys($_SESSION['panier']);
-    
-    if (!empty($productIds)) {
-        $in = str_repeat('?,', count($productIds) - 1) . '?';
-        $stmt = $pdo->prepare("SELECT id, titre, prix, image_principale, stock FROM products WHERE id IN ($in)");
-        $stmt->execute($productIds);
-        // Utilisation de FETCH_UNIQUE pour avoir les IDs comme clés
-        $productsData = $stmt->fetchAll(PDO::FETCH_ASSOC | PDO::FETCH_UNIQUE);
-
-        foreach ($_SESSION['panier'] as $productId => $item) {
-            if (isset($productsData[$productId])) {
-                $produit = $productsData[$productId];
-                $quantite_demandee = $item['quantity'];
-                // S'assurer que la quantité ne dépasse pas le stock
-                $quantite_panier = min($quantite_demandee, $produit['stock']); 
-                if ($quantite_panier != $quantite_demandee) {
-                    // Optionnel: informer l'utilisateur que la quantité a été ajustée
-                    $_SESSION['panier'][$productId]['quantity'] = $quantite_panier;
-                    // Pour afficher le message, il faudrait une fonction comme displayFlashMessages()
-                    // flashMessage('info', "La quantité pour '{$produit['titre']}' a été ajustée au stock disponible ({$quantite_panier}).");
-                }
-                
-                if ($quantite_panier > 0) {
-                    $sous_total = $produit['prix'] * $quantite_panier;
-                    $total_panier += $sous_total;
-                    
-                    $panier_avec_details[$productId] = [
-                        'id' => $productId,
-                        'titre' => $produit['titre'],
-                        'prix' => $produit['prix'],
-                        'image' => $produit['image_principale'],
-                        'stock' => $produit['stock'],
-                        'quantite' => $quantite_panier,
-                        'sous_total' => $sous_total
-                    ];
-                } else {
-                    // Si la quantité est 0 (ou stock épuisé), on le retire du panier session
-                    unset($_SESSION['panier'][$productId]);
-                    // flashMessage('info', "Le produit '{$produit['titre']}' a été retiré car son stock est épuisé.");
-                }
-            } else {
-                // Le produit n'existe plus en BDD, on le retire
-                unset($_SESSION['panier'][$productId]);
-                 // flashMessage('warning', "Un produit anciennement dans votre panier n'est plus disponible et a été retiré.");
-            }
-        }
-    }
-}
+// Récupération des détails du panier
+$panier_info = $cartDAO->getCartDetails();
+$panier_avec_details = $panier_info['items'];
+$total_panier = $panier_info['total'];
 ?>
 
 <div class="container py-5">
@@ -106,36 +59,36 @@ if (!empty($_SESSION['panier'])) {
                             </tr>
                         </thead>
                         <tbody>
-                            <?php foreach ($panier_avec_details as $productId => $item): ?>
-                                <tr id="cart-item-<?= $productId ?>">
+                            <?php foreach ($panier_avec_details as $item): ?>
+                                <tr id="cart-item-<?= $item['id'] ?>">
                                     <td>
-                                        <a href="index_.php?page=produit_details&id=<?= $productId ?>">
+                                        <a href="index_.php?page=produit_details&id=<?= $item['id'] ?>">
                                             <img src="<?= htmlspecialchars($item['image'] ?? 'admin/public/img/products/default.jpg') ?>" 
                                                  alt="<?= htmlspecialchars($item['titre']) ?>" 
                                                  class="img-thumbnail cart-item-image">
                                         </a>
                                     </td>
                                     <td>
-                                        <a href="index_.php?page=produit_details&id=<?= $productId ?>" class="text-decoration-none fw-bold cart-item-title">
+                                        <a href="index_.php?page=produit_details&id=<?= $item['id'] ?>" class="text-decoration-none fw-bold cart-item-title">
                                             <?= htmlspecialchars($item['titre']) ?>
                                         </a>
-                                        <small class="d-block text-muted">Stock disponible: <?= $item['stock'] ?></small>
+                                        <small class="d-block text-muted">Stock disponible: <?= $item['stock'] ?? '?' ?></small>
                                     </td>
                                     <td class="text-center price-col"><span><?= number_format($item['prix'], 2, ',', ' ') ?></span> €</td>
                                     <td class="text-center quantity-col">
                                         <div class="input-group input-group-sm justify-content-center">
-                                            <button type="button" class="btn btn-outline-secondary update-quantity d-flex align-items-center justify-content-center" style="width: 30px; height: 30px;" data-product-id="<?= $productId ?>" data-action="decrease">
+                                            <button type="button" class="btn btn-outline-secondary update-quantity d-flex align-items-center justify-content-center" style="width: 30px; height: 30px;" data-product-id="<?= $item['id'] ?>" data-action="decrease">
                                                 <i class="fas fa-minus"></i>
                                             </button>
-                                            <input type="text" class="form-control text-center quantity-input border-secondary" value="<?= $item['quantite'] ?>" readonly style="max-width: 50px; background-color: white;">
-                                            <button type="button" class="btn btn-outline-secondary update-quantity d-flex align-items-center justify-content-center" style="width: 30px; height: 30px;" data-product-id="<?= $productId ?>" data-action="increase" <?= $item['quantite'] >= $item['stock'] ? 'disabled' : '' ?>>
+                                            <input type="text" class="form-control text-center quantity-input border-secondary" value="<?= $item['quantity'] ?>" readonly style="max-width: 50px; background-color: white;">
+                                            <button type="button" class="btn btn-outline-secondary update-quantity d-flex align-items-center justify-content-center" style="width: 30px; height: 30px;" data-product-id="<?= $item['id'] ?>" data-action="increase" <?= isset($item['stock']) && $item['quantity'] >= $item['stock'] ? 'disabled' : '' ?>>
                                                 <i class="fas fa-plus"></i>
                                             </button>
                                         </div>
                                     </td>
-                                    <td class="text-end subtotal-col"><strong><span><?= number_format($item['sous_total'], 2, ',', ' ') ?></span> €</strong></td>
+                                    <td class="text-end subtotal-col"><strong><span><?= number_format($item['subtotal'], 2, ',', ' ') ?></span> €</strong></td>
                                     <td class="text-center">
-                                        <button type="button" class="btn btn-sm btn-outline-danger remove-item" data-product-id="<?= $productId ?>" title="Supprimer l'article">
+                                        <button type="button" class="btn btn-sm btn-outline-danger remove-item" data-product-id="<?= $item['id'] ?>" title="Supprimer l'article">
                                             <i class="fas fa-trash-alt"></i>
                                         </button>
                                     </td>
@@ -257,14 +210,56 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     });
 
-    // Gestion de la mise à jour de la quantité (non implémenté ici, juste placeholder)
+    // Gestion de la mise à jour de la quantité
     document.querySelectorAll('.update-quantity').forEach(button => {
         button.addEventListener('click', function() {
             const productId = this.getAttribute('data-product-id');
             const action = this.getAttribute('data-action');
-            // TODO: Ajouter la logique AJAX pour appeler update_cart_quantity.php
-            console.log('Mise à jour quantité pour', productId, 'action:', action);
-            alert('Fonctionnalité de mise à jour de quantité non implémentée.');
+            
+            // Déterminer la nouvelle quantité
+            const quantityInput = this.parentElement.querySelector('.quantity-input');
+            const currentQuantity = parseInt(quantityInput.value);
+            let newQuantity = currentQuantity;
+            
+            if (action === 'increase') {
+                newQuantity += 1;
+            } else if (action === 'decrease') {
+                newQuantity = Math.max(1, currentQuantity - 1);
+            }
+            
+            if (newQuantity === currentQuantity) {
+                return; // Pas de changement
+            }
+            
+            // Envoyer la mise à jour via AJAX
+            const xhr = new XMLHttpRequest();
+            xhr.open('POST', 'admin/src/php/ajax/update_cart_quantity.php', true);
+            xhr.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded');
+            
+            xhr.onload = function() {
+                if (xhr.status === 200) {
+                    try {
+                        const response = JSON.parse(xhr.responseText);
+                        if (response.success) {
+                            // Mettre à jour l'interface
+                            location.reload(); // Solution simple pour rafraîchir tous les calculs
+                        } else {
+                            alert('Erreur: ' + (response.message || 'Impossible de mettre à jour la quantité.'));
+                        }
+                    } catch (e) {
+                        console.error('Erreur JSON:', e, xhr.responseText);
+                        alert('Une erreur technique est survenue lors de la mise à jour.');
+                    }
+                } else {
+                    alert('Erreur serveur: ' + xhr.status);
+                }
+            };
+            
+            xhr.onerror = function() {
+                alert('Erreur réseau lors de la mise à jour de la quantité.');
+            };
+            
+            xhr.send('product_id=' + productId + '&quantity=' + newQuantity);
         });
     });
 
@@ -298,6 +293,5 @@ document.addEventListener('DOMContentLoaded', function() {
     
     // Initialiser l'état du panier au chargement
     updateCartTotal();
-
 });
-</script> 
+</script>

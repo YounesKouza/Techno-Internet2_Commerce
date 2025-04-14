@@ -67,7 +67,7 @@ function ensureUploadFolder($folder_name) {
         if (!mkdir($upload_dir, 0777, true)) {
             $result['success'] = false;
             $result['message'] = "Impossible de créer le répertoire d'upload: " . $upload_dir;
-        }
+        }   
     }
     
     $result['path'] = $upload_dir;

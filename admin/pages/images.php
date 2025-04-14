@@ -7,6 +7,7 @@
 require_once '../src/php/utils/session.php';
 require_once '../src/php/utils/connexion.php';
 require_once '../src/php/utils/image_util.php';
+require_once '../src/php/all_includes.php';
 
 // Vérifier si l'utilisateur est connecté et est admin
 if (!isset($_SESSION['user_id']) || !isset($_SESSION['is_admin']) || $_SESSION['is_admin'] != true) {
@@ -14,6 +15,11 @@ if (!isset($_SESSION['user_id']) || !isset($_SESSION['is_admin']) || $_SESSION['
     header('Location: login.php');
     exit;
 }
+
+// Initialiser les classes DAO
+$pdo = getPDO();
+$productDAO = new ProductDAO($pdo);
+$productImageDAO = new ProductImageDAO($pdo);
 
 // Traitement des actions
 $message = '';
@@ -35,43 +41,36 @@ if (isset($_POST['action'])) {
         $isMain = isset($_POST['is_main']) ? 1 : 0;
         
         try {
-            $pdo = getPDO();
-            
             // Mettre à jour l'image
-            $stmt = $pdo->prepare("
-                UPDATE product_images 
-                SET product_id = ?, is_main = ?, updated_at = NOW() 
-                WHERE id = ?
-            ");
-            $stmt->execute([$productId, $isMain, $imageId]);
+            $imageData = [
+                'produit_id' => $productId,
+                'is_main' => $isMain,
+                'updated_at' => date('Y-m-d H:i:s')
+            ];
             
-            // Si c'est l'image principale, mettre à jour le produit
-            if ($isMain) {
-                // D'abord, réinitialiser toutes les autres images comme non-principales
-                $stmt = $pdo->prepare("
-                    UPDATE product_images 
-                    SET is_main = FALSE 
-                    WHERE product_id = ? AND id != ?
-                ");
-                $stmt->execute([$productId, $imageId]);
+            $success = $productImageDAO->update($imageId, $imageData);
+            
+            // Si c'est l'image principale, mettre à jour les autres images et le produit
+            if ($success && $isMain) {
+                // Réinitialiser toutes les autres images comme non-principales
+                $productImageDAO->resetMainImages($productId, $imageId);
                 
                 // Récupérer l'URL de l'image
-                $stmt = $pdo->prepare("SELECT url FROM product_images WHERE id = ?");
-                $stmt->execute([$imageId]);
-                $imageUrl = $stmt->fetchColumn();
+                $image = $productImageDAO->findById($imageId);
                 
-                // Mettre à jour l'image principale du produit
-                $stmt = $pdo->prepare("
-                    UPDATE products 
-                    SET image_principale = ? 
-                    WHERE id = ?
-                ");
-                $stmt->execute([$imageUrl, $productId]);
+                if ($image) {
+                    // Mettre à jour l'image principale du produit
+                    $productData = [
+                        'image_principale' => $image->url_image
+                    ];
+                    
+                    $productDAO->update($productId, $productData);
+                }
             }
             
             $message = "Image liée au produit avec succès!";
             $messageType = 'success';
-        } catch (PDOException $e) {
+        } catch (Exception $e) {
             $message = "Erreur lors de la liaison de l'image: " . $e->getMessage();
             $messageType = 'danger';
         }
@@ -80,31 +79,21 @@ if (isset($_POST['action'])) {
         $imageId = $_POST['image_id'];
         
         try {
-            $pdo = getPDO();
-            
             // Récupérer les infos de l'image avant suppression
-            $stmt = $pdo->prepare("
-                SELECT url, product_id, is_main 
-                FROM product_images 
-                WHERE id = ?
-            ");
-            $stmt->execute([$imageId]);
-            $image = $stmt->fetch();
+            $image = $productImageDAO->findById($imageId);
             
             if ($image) {
                 // Si c'était une image principale, mettre à jour le produit
-                if ($image['is_main'] && $image['product_id']) {
-                    $stmt = $pdo->prepare("
-                        UPDATE products 
-                        SET image_principale = NULL 
-                        WHERE id = ?
-                    ");
-                    $stmt->execute([$image['product_id']]);
+                if ($image->is_main && $image->produit_id) {
+                    $productData = [
+                        'image_principale' => null
+                    ];
+                    
+                    $productDAO->update($image->produit_id, $productData);
                 }
                 
                 // Supprimer l'image de la base de données
-                $stmt = $pdo->prepare("DELETE FROM product_images WHERE id = ?");
-                $stmt->execute([$imageId]);
+                $result = $productImageDAO->delete($imageId);
                 
                 $message = "Image supprimée avec succès!";
                 $messageType = 'success';
@@ -112,7 +101,7 @@ if (isset($_POST['action'])) {
                 $message = "Image non trouvée!";
                 $messageType = 'warning';
             }
-        } catch (PDOException $e) {
+        } catch (Exception $e) {
             $message = "Erreur lors de la suppression de l'image: " . $e->getMessage();
             $messageType = 'danger';
         }
@@ -124,28 +113,13 @@ $images = [];
 $products = [];
 
 try {
-    $pdo = getPDO();
-    
-    // Récupérer les images
-    $stmt = $pdo->prepare("
-        SELECT i.*, p.nom as product_name 
-        FROM product_images i 
-        LEFT JOIN products p ON i.product_id = p.id 
-        ORDER BY i.category, i.name
-    ");
-    $stmt->execute();
-    $images = $stmt->fetchAll();
+    // Récupérer les images avec les noms de produits associés
+    $images = $productImageDAO->findAllWithProductNames();
     
     // Récupérer les produits pour le formulaire de liaison
-    $stmt = $pdo->prepare("
-        SELECT id, nom, categorie 
-        FROM products 
-        ORDER BY categorie, nom
-    ");
-    $stmt->execute();
-    $products = $stmt->fetchAll();
+    $products = $productDAO->findAll();
     
-} catch (PDOException $e) {
+} catch (Exception $e) {
     $message = "Erreur lors de la récupération des données: " . $e->getMessage();
     $messageType = 'danger';
 }

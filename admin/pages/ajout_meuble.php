@@ -17,25 +17,27 @@ if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'admin') {
 require_once '../src/php/utils/connexion.php';
 require_once '../src/php/utils/check_permissions.php';
 require_once '../src/php/utils/category_helper.php';
+require_once '../src/php/utils/sidebar.php';
+require_once '../src/php/utils/all_includes.php';
 
 // Vérification des permissions des dossiers d'upload
 $upload_permissions = checkDirectoryPermissions('uploads/products');
 $permission_error = !$upload_permissions['success'] ? $upload_permissions['message'] : "";
-
-// Fonction pour générer un nom de fichier unique
-function generateUniqueFileName($extension) {
-    return 'product_' . time() . '_' . uniqid() . '.' . $extension;
-}
 
 // Initialisation des variables
 $pdo = getPDO();
 $error = "";
 $success = "";
 
+// Initialisation des objets DAO
+$productDAO = new ProductDAO($pdo);
+$categoryDAO = new CategoryDAO($pdo);
+$productImageDAO = new ProductImageDAO($pdo);
+
 // Récupération des catégories pour le formulaire
 try {
-    $categories = $pdo->query("SELECT id, nom FROM categories ORDER BY nom ASC")->fetchAll();
-} catch (PDOException $e) {
+    $categories = $categoryDAO->findAll();
+} catch (Exception $e) {
     $error = "Erreur lors de la récupération des catégories : " . $e->getMessage();
     $categories = [];
 }
@@ -68,9 +70,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $allowed_types = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
                 if (in_array($file['type'], $allowed_types)) {
                     // Déterminer le dossier selon la catégorie
-                    $category_query = $pdo->prepare("SELECT nom FROM categories WHERE id = ?");
-                    $category_query->execute([$categorie_id]);
-                    $category_name = $category_query->fetchColumn();
+                    $category = $categoryDAO->findById($categorie_id);
+                    $category_name = $category ? $category->nom : '';
                     
                     // Utiliser la fonction utilitaire pour déterminer le dossier
                     $folder_name = getCategoryFolder($category_name);
@@ -102,23 +103,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
             
             if (empty($error)) {
-                // Insertion du produit dans la base de données
-                $stmt = $pdo->prepare("
-                    INSERT INTO products (titre, description, prix, stock, categorie_id, image_principale, actif)
-                    VALUES (?, ?, ?, ?, ?, ?, ?)
-                ");
+                // Création du produit via le DAO
+                $productData = [
+                    'titre' => $titre,
+                    'description' => $description,
+                    'prix' => $prix,
+                    'stock' => $stock,
+                    'categorie_id' => $categorie_id,
+                    'image_principale' => $image_principale,
+                    'actif' => $actif
+                ];
                 
-                $stmt->execute([
-                    $titre,
-                    $description,
-                    $prix,
-                    $stock,
-                    $categorie_id,
-                    $image_principale,
-                    $actif
-                ]);
+                $product_id = $productDAO->create($productData);
                 
-                $product_id = $pdo->lastInsertId();
+                if (!$product_id) {
+                    throw new Exception("Erreur lors de la création du produit");
+                }
                 
                 // Traitement des images supplémentaires
                 if (!empty($_FILES['images']['name'][0])) {
@@ -127,9 +127,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $order = 1;
                     
                     // Déterminer le dossier selon la catégorie (déjà défini pour l'image principale)
-                    $category_query = $pdo->prepare("SELECT nom FROM categories WHERE id = ?");
-                    $category_query->execute([$categorie_id]);
-                    $category_name = $category_query->fetchColumn();
+                    $category = $categoryDAO->findById($categorie_id);
+                    $category_name = $category ? $category->nom : '';
                     
                     // Utiliser la fonction utilitaire pour déterminer le dossier
                     $folder_name = getCategoryFolder($category_name);
@@ -152,12 +151,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                 if (move_uploaded_file($files['tmp_name'][$i], $destination)) {
                                     $image_url = 'admin/public/images/' . $folder_name . '/' . $new_filename;
                                     
-                                    // Ajout de l'image dans la table images_products
-                                    $stmt = $pdo->prepare("
-                                        INSERT INTO images_products (produit_id, url_image, ordre)
-                                        VALUES (?, ?, ?)
-                                    ");
-                                    $stmt->execute([$product_id, $image_url, $order]);
+                                    // Ajout de l'image via le DAO
+                                    $imageData = [
+                                        'produit_id' => $product_id,
+                                        'url_image' => $image_url,
+                                        'ordre' => $order
+                                    ];
+                                    $productImageDAO->create($imageData);
                                     $order++;
                                 } else {
                                     // Enregistrer l'erreur mais continuer avec les autres images
@@ -177,7 +177,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $categorie_id = null;
                 $actif = 1;
             }
-        } catch (PDOException $e) {
+        } catch (Exception $e) {
             $error = "Erreur lors de l'ajout du produit : " . $e->getMessage();
         }
     }
@@ -208,106 +208,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     add_body_class(); // Ajout automatique de la classe admin-interface si nécessaire 
     ?>
 </head>
-<body class="admin-interface">
-    <!-- Overlay pour la sidebar mobile -->
-    <div id="sidebarOverlay" class="position-fixed d-lg-none top-0 start-0 w-100 h-100 bg-dark bg-opacity-50" style="z-index: 99; display: none;"></div>
-
-    <header class="navbar navbar-dark sticky-top bg-dark flex-md-nowrap p-0 shadow">
-        <a class="navbar-brand col-md-3 col-lg-2 me-0 px-3" href="/Exos/Techno-internet2_commerce/admin/pages/accueil_admin.php">
-            Administration
-        </a>
-        
-        <!-- Bouton pour afficher/masquer la sidebar sur mobile -->
-        <button id="toggleSidebar" class="navbar-toggler d-lg-none" type="button" aria-label="Toggle navigation">
-            <span class="navbar-toggler-icon"></span>
-        </button>
-        
-        <div class="navbar-nav ms-auto px-3">
-            <div class="nav-item text-nowrap d-flex align-items-center">
-                <span class="text-light d-none d-md-inline me-2">
-                    <i class="fas fa-user-circle me-1"></i>
-                    <?php echo isset($_SESSION['username']) ? htmlspecialchars($_SESSION['username']) : 'Admin'; ?>
-                </span>
-                <a class="nav-link px-3" href="/Exos/Techno-internet2_commerce/admin/pages/disconnect.php">
-                    <i class="fas fa-sign-out-alt me-1"></i>
-                    <span class="d-none d-sm-inline">Déconnexion</span>
-                </a>
-            </div>
-        </div>
-    </header>
-
+<body>
     <div class="container-fluid">
         <div class="row">
             <!-- Sidebar -->
-            <nav id="adminSidebar" class="col-md-3 col-lg-2 d-md-block sidebar">
-                <div class="position-sticky pt-3 sidebar-sticky">
-                    <ul class="nav flex-column">
-                        <li class="nav-item">
-                            <a class="nav-link" href="/Exos/Techno-internet2_commerce/admin/pages/accueil_admin.php">
-                                <i class="fas fa-tachometer-alt me-2"></i>
-                                <span>Tableau de bord</span>
-                            </a>
-                        </li>
-                        <li class="nav-item">
-                            <a class="nav-link" href="/Exos/Techno-internet2_commerce/admin/pages/gestion_meubles.php">
-                                <i class="fas fa-couch me-2"></i>
-                                <span>Gestion des meubles</span>
-                            </a>
-                        </li>
-                        <li class="nav-item">
-                            <a class="nav-link active" href="/Exos/Techno-internet2_commerce/admin/pages/ajout_meuble.php">
-                                <i class="fas fa-plus-circle me-2"></i>
-                                <span>Ajouter un meuble</span>
-                            </a>
-                        </li>
-                        <li class="nav-item">
-                            <a class="nav-link" href="/Exos/Techno-internet2_commerce/admin/pages/gestion_categories.php">
-                                <i class="fas fa-tags me-2"></i>
-                                <span>Catégories</span>
-                            </a>
-                        </li>
-                        <li class="nav-item">
-                            <a class="nav-link" href="/Exos/Techno-internet2_commerce/admin/pages/gestion_commandes.php">
-                                <i class="fas fa-shopping-cart me-2"></i>
-                                <span>Commandes</span>
-                            </a>
-                        </li>
-                        <li class="nav-item">
-                            <a class="nav-link" href="/Exos/Techno-internet2_commerce/admin/pages/gestion_clients.php">
-                                <i class="fas fa-users me-2"></i>
-                                <span>Clients</span>
-                            </a>
-                        </li>
-                        <li class="nav-item">
-                            <a class="nav-link" href="/Exos/Techno-internet2_commerce/admin/pages/images.php">
-                                <i class="fas fa-images me-2"></i>
-                                <span>Images de produits</span>
-                            </a>
-                        </li>
-                        <li class="nav-item">
-                            <a class="nav-link" href="/Exos/Techno-internet2_commerce/admin/pages/statistiques.php">
-                                <i class="fas fa-chart-bar me-2"></i>
-                                <span>Statistiques</span>
-                            </a>
-                        </li>
-                    </ul>
-                    
-                    <h6 class="sidebar-heading d-flex justify-content-between align-items-center px-3 mt-4 mb-1 text-muted">
-                        <span>Site</span>
-                    </h6>
-                    <ul class="nav flex-column mb-2">
-                        <li class="nav-item">
-                            <a class="nav-link" href="/Exos/Techno-internet2_commerce/index_.php" target="_blank">
-                                <i class="fas fa-external-link-alt me-2"></i>
-                                <span>Voir le site</span>
-                            </a>
-                        </li>
-                    </ul>
-                </div>
-            </nav>
-
+            <?php generate_sidebar('products'); ?>
+            
             <!-- Contenu principal -->
-            <main id="contentWrapper" class="col-md-9 ms-sm-auto col-lg-10 px-md-4 main-content">
+            <main class="col-md-9 ms-sm-auto col-lg-10 px-md-4 main-content">
                 <!-- Alertes de succès ou d'erreur -->
                 <?php if (!empty($permission_error)): ?>
                 <div class="alert alert-warning alert-dismissible fade show mt-3" role="alert">
@@ -348,100 +256,81 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     </div>
                     <div class="card-body">
                         <form action="" method="post" enctype="multipart/form-data">
-                            <div class="row g-3">
+                            <div class="row">
                                 <!-- Titre -->
-                                <div class="col-12 col-md-6">
-                                    <label for="titre" class="form-label">Titre du produit <span class="text-danger">*</span></label>
-                                    <input type="text" class="form-control" id="titre" name="titre" value="<?= isset($titre) ? htmlspecialchars($titre) : '' ?>" required>
+                                <div class="col-md-8 mb-3">
+                                    <label for="titre" class="form-label">Titre <span class="text-danger">*</span></label>
+                                    <input type="text" class="form-control" id="titre" name="titre" value="<?= htmlspecialchars($titre ?? '') ?>" required>
                                 </div>
                                 
                                 <!-- Prix -->
-                                <div class="col-12 col-md-3">
-                                    <label for="prix" class="form-label">Prix <span class="text-danger">*</span></label>
+                                <div class="col-md-4 mb-3">
+                                    <label for="prix" class="form-label">Prix (€) <span class="text-danger">*</span></label>
                                     <div class="input-group">
-                                        <input type="number" class="form-control" id="prix" name="prix" step="0.01" min="0" value="<?= isset($prix) ? htmlspecialchars($prix) : '' ?>" required>
+                                        <input type="number" class="form-control" id="prix" name="prix" step="0.01" min="0" value="<?= $prix ?? 0 ?>" required>
                                         <span class="input-group-text">€</span>
                                     </div>
                                 </div>
                                 
-                                <!-- Stock -->
-                                <div class="col-12 col-md-3">
-                                    <label for="stock" class="form-label">Stock <span class="text-danger">*</span></label>
-                                    <input type="number" class="form-control" id="stock" name="stock" min="0" value="<?= isset($stock) ? htmlspecialchars($stock) : '' ?>" required>
+                                <!-- Description -->
+                                <div class="col-md-12 mb-3">
+                                    <label for="description" class="form-label">Description</label>
+                                    <textarea class="form-control" id="description" name="description" rows="4"><?= htmlspecialchars($description ?? '') ?></textarea>
                                 </div>
                                 
                                 <!-- Catégorie -->
-                                <div class="col-12 col-md-6">
-                                    <label for="categorie" class="form-label">Catégorie <span class="text-danger">*</span></label>
-                                    <select class="form-select" id="categorie" name="categorie" required>
-                                        <option value="">Sélectionner une catégorie</option>
-                                        <?php foreach ($categories as $cat): ?>
-                                        <option value="<?= $cat['id'] ?>" <?= (isset($categorie) && $categorie == $cat['id']) ? 'selected' : '' ?>>
-                                            <?= htmlspecialchars($cat['nom']) ?>
-                                        </option>
+                                <div class="col-md-4 mb-3">
+                                    <label for="categorie" class="form-label">Catégorie</label>
+                                    <select class="form-select" id="categorie" name="categorie">
+                                        <option value="">-- Sélectionner une catégorie --</option>
+                                        <?php foreach ($categories as $category): ?>
+                                            <option value="<?= $category->id ?>" <?= (isset($categorie_id) && $categorie_id == $category->id) ? 'selected' : '' ?>>
+                                                <?= htmlspecialchars($category->nom) ?>
+                                            </option>
                                         <?php endforeach; ?>
                                     </select>
                                 </div>
                                 
-                                <!-- Actif -->
-                                <div class="col-12 col-md-6">
-                                    <label class="form-label d-block">Statut du produit</label>
-                                    <div class="form-check form-check-inline">
-                                        <input class="form-check-input" type="radio" name="actif" id="actif_oui" value="1" <?= (!isset($actif) || $actif == 1) ? 'checked' : '' ?>>
-                                        <label class="form-check-label" for="actif_oui">Actif</label>
-                                    </div>
-                                    <div class="form-check form-check-inline">
-                                        <input class="form-check-input" type="radio" name="actif" id="actif_non" value="0" <?= (isset($actif) && $actif == 0) ? 'checked' : '' ?>>
-                                        <label class="form-check-label" for="actif_non">Inactif</label>
-                                    </div>
+                                <!-- Stock -->
+                                <div class="col-md-4 mb-3">
+                                    <label for="stock" class="form-label">Stock</label>
+                                    <input type="number" class="form-control" id="stock" name="stock" min="0" value="<?= $stock ?? 0 ?>">
                                 </div>
                                 
-                                <!-- Description -->
-                                <div class="col-12">
-                                    <label for="description" class="form-label">Description</label>
-                                    <textarea class="form-control" id="description" name="description" rows="5"><?= isset($description) ? htmlspecialchars($description) : '' ?></textarea>
-                                </div>
-                                
-                                <!-- Images -->
-                                <div class="col-12">
-                                    <hr class="my-3">
-                                    <h5>Images du produit</h5>
+                                <!-- Statut -->
+                                <div class="col-md-4 mb-3">
+                                    <label class="form-label">Statut</label>
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="checkbox" id="actif" name="actif" value="1" <?= (!isset($actif) || $actif) ? 'checked' : '' ?>>
+                                        <label class="form-check-label" for="actif">
+                                            Actif (visible sur le site)
+                                        </label>
+                                    </div>
                                 </div>
                                 
                                 <!-- Image principale -->
-                                <div class="col-12 col-md-6">
+                                <div class="col-md-12 mb-4">
                                     <label for="image_principale" class="form-label">Image principale <span class="text-danger">*</span></label>
                                     <input type="file" class="form-control" id="image_principale" name="image_principale" accept="image/*" required>
-                                    <div class="form-text">Format recommandé: 800x600px, max 2Mo</div>
+                                    <div id="image_preview_container" class="mt-2 d-none">
+                                        <img id="image_preview" src="#" alt="Aperçu de l'image" class="img-thumbnail" style="max-height: 150px;">
+                                    </div>
+                                    <div class="form-text">L'image principale apparaîtra comme image de couverture du produit. Formats acceptés : JPG, PNG, GIF, WebP.</div>
                                 </div>
                                 
                                 <!-- Images supplémentaires -->
-                                <div class="col-12 col-md-6">
-                                    <label for="images" class="form-label">Images supplémentaires</label>
+                                <div class="col-md-12 mb-4">
+                                    <label for="images" class="form-label">Images supplémentaires (facultatif)</label>
                                     <input type="file" class="form-control" id="images" name="images[]" accept="image/*" multiple>
-                                    <div class="form-text">Vous pouvez sélectionner plusieurs images (max 5)</div>
-                                </div>
-                                
-                                <!-- Prévisualisation des images -->
-                                <div class="col-12">
-                                    <div class="mt-3 mb-3">
-                                        <label class="form-label">Aperçu des images</label>
-                                        <div id="image-preview" class="d-flex flex-wrap gap-2 p-2 border rounded">
-                                            <div class="text-muted small text-center w-100">
-                                                <i class="fas fa-images me-1"></i>
-                                                Les aperçus s'afficheront ici
-                                            </div>
-                                        </div>
-                                    </div>
+                                    <div id="additional_images_preview" class="mt-2 row g-2"></div>
+                                    <div class="form-text">Vous pouvez sélectionner plusieurs images. Elles seront affichées dans la galerie du produit.</div>
                                 </div>
                                 
                                 <!-- Boutons d'action -->
-                                <div class="col-12 d-grid gap-2 d-md-flex justify-content-md-end mt-4">
-                                    <button type="reset" class="btn btn-outline-secondary">
-                                        <i class="fas fa-undo me-1"></i> Réinitialiser
-                                    </button>
+                                <div class="col-12 d-flex justify-content-end">
+                                    <button type="reset" class="btn btn-outline-secondary me-2">Réinitialiser</button>
                                     <button type="submit" class="btn btn-primary">
-                                        <i class="fas fa-save me-1"></i> Ajouter le meuble
+                                        <i class="fas fa-save me-1"></i> Enregistrer le produit
                                     </button>
                                 </div>
                             </div>
@@ -451,15 +340,56 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             </main>
         </div>
     </div>
-
-    <!-- Bootstrap JavaScript Bundle with Popper -->
+    
+    <!-- Bootstrap Bundle with Popper -->
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
     
     <!-- jQuery -->
     <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
     
-    <!-- Notre fichier JavaScript pour l'interface admin -->
-    <script src="/Exos/Techno-internet2_commerce/admin/public/js/fonction.js"></script>
+    <!-- Script pour l'aperçu des images -->
+    <script>
+        // Aperçu de l'image principale
+        document.getElementById('image_principale').addEventListener('change', function() {
+            const file = this.files[0];
+            if (file) {
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    const preview = document.getElementById('image_preview');
+                    preview.src = e.target.result;
+                    document.getElementById('image_preview_container').classList.remove('d-none');
+                }
+                reader.readAsDataURL(file);
+            }
+        });
+        
+        // Aperçu des images supplémentaires
+        document.getElementById('images').addEventListener('change', function() {
+            const previewContainer = document.getElementById('additional_images_preview');
+            previewContainer.innerHTML = '';
+            
+            for (let i = 0; i < this.files.length; i++) {
+                const file = this.files[i];
+                if (file) {
+                    const reader = new FileReader();
+                    reader.onload = function(e) {
+                        const col = document.createElement('div');
+                        col.className = 'col-auto';
+                        
+                        const img = document.createElement('img');
+                        img.src = e.target.result;
+                        img.className = 'img-thumbnail';
+                        img.style.height = '100px';
+                        img.alt = 'Aperçu image ' + (i + 1);
+                        
+                        col.appendChild(img);
+                        previewContainer.appendChild(col);
+                    }
+                    reader.readAsDataURL(file);
+                }
+            }
+        });
+    </script>
 </body>
 </html>
 

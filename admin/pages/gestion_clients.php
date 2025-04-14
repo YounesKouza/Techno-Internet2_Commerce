@@ -16,6 +16,7 @@ if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'admin') {
 // Inclusion des fichiers nécessaires
 require_once '../src/php/utils/connexion.php';
 require_once '../src/php/utils/sidebar.php';
+require_once '../src/php/utils/all_includes.php';
 
 // Initialisation des variables
 $pdo = getPDO();
@@ -23,6 +24,10 @@ $error = "";
 $success = "";
 $user_detail = null;
 $user_orders = [];
+
+// Initialisation des DAO
+$userDAO = new UserDAO($pdo);
+$orderDAO = new OrderDAO($pdo);
 
 // Pagination
 $page = isset($_GET['page']) ? max(1, intval($_GET['page'])) : 1;
@@ -32,34 +37,12 @@ $offset = ($page - 1) * $limit;
 // Recherche
 $search = isset($_GET['search']) ? $_GET['search'] : '';
 
-// Construction de la requête SQL avec filtres
-$query = "SELECT * FROM users WHERE role = 'client'";
-$params = [];
+// Récupération des clients avec filtres et pagination
+$users = $userDAO->findByRoleWithFilters('client', $search, $limit, $offset);
 
-if (!empty($search)) {
-    $query .= " AND (nom ILIKE ? OR email ILIKE ? OR telephone ILIKE ?)";
-    $search_param = '%' . $search . '%';
-    $params[] = $search_param;
-    $params[] = $search_param;
-    $params[] = $search_param;
-}
-
-// Comptage du nombre total de clients
-$count_query = str_replace("*", "COUNT(*) as count", $query);
-$stmt = $pdo->prepare($count_query);
-$stmt->execute($params);
-$total_rows = $stmt->fetch()['count'];
+// Comptage du nombre total de clients pour la pagination
+$total_rows = $userDAO->countByRoleWithFilters('client', $search);
 $total_pages = ceil($total_rows / $limit);
-
-// Ajout de l'ordre et de la pagination à la requête finale
-$query .= " ORDER BY date_inscription DESC LIMIT ? OFFSET ?";
-$params[] = $limit;
-$params[] = $offset;
-
-// Exécution de la requête
-$stmt = $pdo->prepare($query);
-$stmt->execute($params);
-$users = $stmt->fetchAll();
 
 // Traitement des actions
 if (isset($_GET['action']) && isset($_GET['user_id'])) {
@@ -67,9 +50,7 @@ if (isset($_GET['action']) && isset($_GET['user_id'])) {
     $action = $_GET['action'];
     
     // Vérification de l'existence du client
-    $stmt = $pdo->prepare("SELECT * FROM users WHERE id = ? AND role = 'client'");
-    $stmt->execute([$user_id]);
-    $user = $stmt->fetch();
+    $user = $userDAO->findByIdAndRole($user_id, 'client');
     
     if (!$user) {
         $error = "Le client n'existe pas";
@@ -81,57 +62,24 @@ if (isset($_GET['action']) && isset($_GET['user_id'])) {
                     $user_detail = $user;
                     
                     // Récupération des commandes du client
-                    $stmt = $pdo->prepare("
-                        SELECT 
-                            o.id, 
-                            o.date_commande, 
-                            o.montant_total, 
-                            o.statut,
-                            COUNT(ol.id) AS nb_produits
-                        FROM orders o
-                        LEFT JOIN order_lines ol ON o.id = ol.order_id
-                        WHERE o.utilisateur_id = ?
-                        GROUP BY o.id, o.date_commande, o.montant_total, o.statut
-                        ORDER BY o.date_commande DESC
-                    ");
-                    $stmt->execute([$user_id]);
-                    $user_orders = $stmt->fetchAll();
+                    $user_orders = $orderDAO->findByUserId($user_id);
                     break;
                     
                 case 'delete':
                     // Vérification si le client a des commandes
-                    $stmt = $pdo->prepare("SELECT COUNT(*) FROM orders WHERE utilisateur_id = ?");
-                    $stmt->execute([$user_id]);
-                    $has_orders = $stmt->fetchColumn() > 0;
+                    $has_orders = $orderDAO->countByUserId($user_id) > 0;
                     
                     if ($has_orders && !isset($_GET['force'])) {
                         $error = "Ce client a des commandes associées. Utilisez la suppression forcée pour supprimer quand même.";
                     } else {
                         // Si suppression forcée, on supprime d'abord les commandes et lignes de commande
                         if ($has_orders) {
-                            // Récupération des commandes du client
-                            $stmt = $pdo->prepare("SELECT id FROM orders WHERE utilisateur_id = ?");
-                            $stmt->execute([$user_id]);
-                            $order_ids = $stmt->fetchAll(PDO::FETCH_COLUMN);
-                            
-                            // Suppression des lignes de commande pour chaque commande
-                            foreach ($order_ids as $order_id) {
-                                $stmt = $pdo->prepare("DELETE FROM order_lines WHERE order_id = ?");
-                                $stmt->execute([$order_id]);
-                                
-                                // Suppression des paiements
-                                $stmt = $pdo->prepare("DELETE FROM payments WHERE order_id = ?");
-                                $stmt->execute([$order_id]);
-                            }
-                            
-                            // Suppression des commandes
-                            $stmt = $pdo->prepare("DELETE FROM orders WHERE utilisateur_id = ?");
-                            $stmt->execute([$user_id]);
+                            // Suppression des commandes et leurs dépendances
+                            $orderDAO->deleteAllByUserId($user_id);
                         }
                         
                         // Suppression du client
-                        $stmt = $pdo->prepare("DELETE FROM users WHERE id = ?");
-                        $stmt->execute([$user_id]);
+                        $userDAO->delete($user_id);
                         
                         $success = "Le client a été supprimé avec succès" . ($has_orders ? " (avec toutes ses commandes)" : "");
                     }
@@ -153,23 +101,24 @@ if (isset($_GET['action']) && isset($_GET['user_id'])) {
                             $error = "L'email n'est pas valide";
                         } else {
                             // Vérification si l'email existe déjà (sauf pour le client actuel)
-                            $stmt = $pdo->prepare("SELECT COUNT(*) FROM users WHERE email = ? AND id != ?");
-                            $stmt->execute([$email, $user_id]);
-                            if ($stmt->fetchColumn() > 0) {
+                            $email_exists = $userDAO->isEmailTaken($email, $user_id);
+                            
+                            if ($email_exists) {
                                 $error = "Cet email est déjà utilisé par un autre utilisateur";
                             } else {
                                 // Mise à jour du client
-                                $stmt = $pdo->prepare("
-                                    UPDATE users 
-                                    SET nom = ?, email = ?, telephone = ?, adresse = ?
-                                    WHERE id = ?
-                                ");
-                                $stmt->execute([$nom, $email, $telephone, $adresse, $user_id]);
+                                $userData = [
+                                    'id' => $user_id,
+                                    'nom' => $nom,
+                                    'email' => $email,
+                                    'telephone' => $telephone,
+                                    'adresse' => $adresse
+                                ];
+                                
+                                $userDAO->update($userData);
                                 
                                 // Récupération des données mises à jour
-                                $stmt = $pdo->prepare("SELECT * FROM users WHERE id = ?");
-                                $stmt->execute([$user_id]);
-                                $user_detail = $stmt->fetch();
+                                $user_detail = $userDAO->findById($user_id);
                                 
                                 $success = "Les informations du client ont été mises à jour avec succès";
                             }
@@ -179,7 +128,7 @@ if (isset($_GET['action']) && isset($_GET['user_id'])) {
                     }
                     break;
             }
-        } catch (PDOException $e) {
+        } catch (Exception $e) {
             $error = "Erreur lors du traitement de l'action : " . $e->getMessage();
         }
     }

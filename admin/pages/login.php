@@ -12,8 +12,9 @@ if (isset($_SESSION['user_id']) && isset($_SESSION['role']) && $_SESSION['role']
     exit;
 }
 
-// Inclusion du fichier de connexion à la base de données
+// Inclusion des fichiers nécessaires
 require_once '../src/php/utils/connexion.php';
+require_once '../src/php/utils/all_includes.php';
 
 $error = '';
 
@@ -26,48 +27,47 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $error = 'Veuillez remplir tous les champs';
     } else {
         try {
-            // Vérifier les identifiants
+            // Initialisation de la connexion et des DAO
             $pdo = getPDO();
+            $userDAO = new UserDAO($pdo);
             
             // Debug: Afficher la requête pour vérifier
             error_log("Tentative de connexion avec email: $email");
             
             // Récupérer l'utilisateur par email, quelle que soit son rôle
-            $stmt = $pdo->prepare('SELECT * FROM users WHERE email = ?');
-            $stmt->execute([$email]);
-            $user = $stmt->fetch();
+            $user = $userDAO->findByEmail($email);
             
             if ($user) {
-                error_log("Utilisateur trouvé: ID=" . $user['id'] . ", Role=" . $user['role']);
+                error_log("Utilisateur trouvé: ID=" . $user->id . ", Role=" . $user->role);
                 
                 // Vérifier le mot de passe
-                if (password_verify($password, $user['mot_de_passe'])) {
+                if (password_verify($password, $user->mot_de_passe)) {
                     // Vérifier si l'utilisateur est admin
-                    if ($user['role'] === 'admin') {
-                // Connexion réussie - Création de la session
-                $_SESSION['user_id'] = $user['id'];
-                $_SESSION['username'] = $user['nom'];
-                $_SESSION['email'] = $user['email'];
-                $_SESSION['role'] = $user['role'];
-                
-                // Redirection vers le tableau de bord
-                header('Location: accueil_admin.php');
-                exit;
-            } else {
+                    if ($user->role === 'admin') {
+                        // Connexion réussie - Création de la session
+                        $_SESSION['user_id'] = $user->id;
+                        $_SESSION['username'] = $user->nom;
+                        $_SESSION['email'] = $user->email;
+                        $_SESSION['role'] = $user->role;
+                        
+                        // Redirection vers le tableau de bord
+                        header('Location: accueil_admin.php');
+                        exit;
+                    } else {
                         $error = 'Vous n\'avez pas les droits d\'accès à l\'administration';
                         error_log("Accès refusé: l'utilisateur n'est pas admin");
                     }
                 } else {
                     $error = 'Mot de passe incorrect';
-                    error_log("Mot de passe incorrect pour l'utilisateur: " . $user['email']);
+                    error_log("Mot de passe incorrect pour l'utilisateur: " . $user->email);
                 }
             } else {
                 $error = 'Aucun utilisateur trouvé avec cet email';
                 error_log("Aucun utilisateur trouvé avec l'email: $email");
             }
-        } catch (PDOException $e) {
+        } catch (Exception $e) {
             $error = 'Erreur de connexion à la base de données: ' . $e->getMessage();
-            error_log("Erreur PDO: " . $e->getMessage());
+            error_log("Erreur: " . $e->getMessage());
         }
     }
 }

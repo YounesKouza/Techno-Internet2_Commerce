@@ -16,11 +16,18 @@ if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'admin') {
 // Inclusion des fichiers nécessaires
 require_once '../src/php/utils/connexion.php';
 require_once '../src/php/utils/category_helper.php';
+require_once '../src/php/utils/sidebar.php';
+require_once '../src/php/utils/all_includes.php';
 
 // Initialisation des variables
 $pdo = getPDO();
 $error = "";
 $success = "";
+
+// Initialisation des objets DAO
+$productDAO = new ProductDAO($pdo);
+$productImageDAO = new ProductImageDAO($pdo);
+$categoryDAO = new CategoryDAO($pdo);
 
 // Vérification si l'ID est valide
 $id = isset($_GET['id']) ? intval($_GET['id']) : 0;
@@ -30,12 +37,10 @@ if ($id <= 0) {
 }
 
 // Récupération des catégories pour le formulaire
-$categories = $pdo->query("SELECT id, nom FROM categories ORDER BY nom ASC")->fetchAll();
+$categories = $categoryDAO->findAll();
 
 // Récupération des informations du produit
-$stmt = $pdo->prepare("SELECT * FROM products WHERE id = ?");
-$stmt->execute([$id]);
-$product = $stmt->fetch();
+$product = $productDAO->findById($id);
 
 if (!$product) {
     header('Location: gestion_meubles.php?error=product_not_found');
@@ -43,14 +48,7 @@ if (!$product) {
 }
 
 // Récupération des images associées au produit
-$stmt = $pdo->prepare("
-    SELECT id, url_image, ordre
-    FROM images_products
-    WHERE produit_id = ?
-    ORDER BY ordre ASC
-");
-$stmt->execute([$id]);
-$images = $stmt->fetchAll();
+$images = $productImageDAO->findByProductId($id);
 
 // Traitement du formulaire de mise à jour du produit
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -71,23 +69,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $error = "Le stock ne peut pas être négatif";
     } else {
         try {
-            // Mise à jour du produit
-            $stmt = $pdo->prepare("
-                UPDATE products 
-                SET titre = ?, description = ?, prix = ?, stock = ?, 
-                    categorie_id = ?, actif = ?
-                WHERE id = ?
-            ");
+            // Création d'un tableau de données pour la mise à jour
+            $productData = [
+                'titre' => $titre,
+                'description' => $description,
+                'prix' => $prix,
+                'stock' => $stock,
+                'categorie_id' => $categorie_id,
+                'actif' => $actif
+            ];
             
-            $stmt->execute([
-                $titre, 
-                $description, 
-                $prix, 
-                $stock, 
-                $categorie_id,
-                $actif,
-                $id
-            ]);
+            // Mise à jour du produit via le DAO
+            $updateResult = $productDAO->update($id, $productData);
+            
+            if (!$updateResult) {
+                throw new Exception("Erreur lors de la mise à jour du produit");
+            }
             
             // Gestion de l'image principale si une nouvelle image est téléchargée
             if (!empty($_FILES['image_principale']['name'])) {
@@ -96,10 +93,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 // Vérification du type de fichier
                 $allowed_types = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
                 if (in_array($file['type'], $allowed_types)) {
-                    // Déterminer le dossier selon la catégorie
-                    $category_query = $pdo->prepare("SELECT nom FROM categories WHERE id = ?");
-                    $category_query->execute([$categorie_id]);
-                    $category_name = $category_query->fetchColumn();
+                    // Récupération du nom de la catégorie
+                    $category = $categoryDAO->findById($categorie_id);
+                    $category_name = $category ? $category->nom : '';
                     
                     // Utiliser la fonction utilitaire pour déterminer le dossier
                     $folder_name = getCategoryFolder($category_name);
@@ -119,14 +115,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         // Déplacement du fichier temporaire vers le dossier de destination
                         if (move_uploaded_file($file['tmp_name'], $destination)) {
                             // Suppression de l'ancienne image si elle existe
-                            if (!empty($product['image_principale'])) {
-                                $old_image_path = $_SERVER['DOCUMENT_ROOT'] . '/Exos/Techno-internet2_commerce/' . $product['image_principale'];
+                            if (!empty($product->image_principale)) {
+                                $old_image_path = $_SERVER['DOCUMENT_ROOT'] . '/Exos/Techno-internet2_commerce/' . $product->image_principale;
                                 if (file_exists($old_image_path)) {
                                     unlink($old_image_path);
                                 }
                             }
                             
                             $image_principale = 'admin/public/images/' . $folder_name . '/' . $new_filename;
+                            
+                            // Mise à jour de l'image principale dans la base de données via le DAO
+                            $productDAO->update($id, ['image_principale' => $image_principale]);
                         } else {
                             $error = "Échec du téléchargement de l'image principale";
                         }
@@ -134,29 +133,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 } else {
                     $error = "Le type de fichier de l'image principale n'est pas autorisé (JPEG, PNG, GIF ou WEBP uniquement)";
                 }
-            } else {
-                // Conserver l'image principale existante
-                $image_principale = $product['image_principale'];
             }
-            
-            // Mise à jour de l'image principale dans la base de données
-            $stmt = $pdo->prepare("UPDATE products SET image_principale = ? WHERE id = ?");
-            $stmt->execute([$image_principale, $id]);
             
             // Traitement des images supplémentaires
             if (!empty($_FILES['images']['name'][0])) {
                 // Récupération de l'ordre maximum actuel
-                $max_order = $pdo->prepare("SELECT COALESCE(MAX(ordre), 0) FROM images_products WHERE produit_id = ?");
-                $max_order->execute([$id]);
-                $current_max_order = $max_order->fetchColumn();
+                $max_order = 0;
+                foreach ($images as $img) {
+                    if ($img->ordre > $max_order) {
+                        $max_order = $img->ordre;
+                    }
+                }
                 
                 $files = $_FILES['images'];
                 $allowed_types = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
                 
-                // Déterminer le dossier selon la catégorie (déjà défini pour l'image principale)
-                $category_query = $pdo->prepare("SELECT nom FROM categories WHERE id = ?");
-                $category_query->execute([$categorie_id]);
-                $category_name = $category_query->fetchColumn();
+                // Récupération du nom de la catégorie
+                $category = $categoryDAO->findById($categorie_id);
+                $category_name = $category ? $category->nom : '';
                 
                 // Utiliser la fonction utilitaire pour déterminer le dossier
                 $folder_name = getCategoryFolder($category_name);
@@ -177,15 +171,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             
                             // Déplacement du fichier vers le dossier de destination
                             if (move_uploaded_file($files['tmp_name'][$i], $destination)) {
-                                $current_max_order++;
+                                $max_order++;
                                 $image_url = 'admin/public/images/' . $folder_name . '/' . $new_filename;
                                 
-                                // Ajout de l'image dans la table images_products
-                                $stmt = $pdo->prepare("
-                                    INSERT INTO images_products (produit_id, url_image, ordre)
-                                    VALUES (?, ?, ?)
-                                ");
-                                $stmt->execute([$id, $image_url, $current_max_order]);
+                                // Ajout de l'image dans la table images_products via le DAO
+                                $imageData = [
+                                    'produit_id' => $id,
+                                    'url_image' => $image_url,
+                                    'ordre' => $max_order
+                                ];
+                                $productImageDAO->create($imageData);
                             }
                         }
                     }
@@ -197,23 +192,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 foreach ($_POST['delete_images'] as $image_id) {
                     $image_id = intval($image_id);
                     
-                    // Récupération de l'URL de l'image pour suppression du fichier
-                    $stmt = $pdo->prepare("SELECT url_image FROM images_products WHERE id = ? AND produit_id = ?");
-                    $stmt->execute([$image_id, $id]);
-                    $img = $stmt->fetch();
+                    // Récupération de l'image à supprimer
+                    $image = $productImageDAO->findById($image_id);
                     
-                    if ($img) {
-                        // Suppression de l'image de la base de données
-                        $stmt = $pdo->prepare("DELETE FROM images_products WHERE id = ?");
-                        $stmt->execute([$image_id]);
-                        
+                    if ($image && $image->produit_id == $id) {
                         // Suppression du fichier physique
-                        if (!empty($img['url_image'])) {
-                            $file_path = $_SERVER['DOCUMENT_ROOT'] . '/Exos/Techno-internet2_commerce/' . $img['url_image'];
+                        if (!empty($image->url_image)) {
+                            $file_path = $_SERVER['DOCUMENT_ROOT'] . '/Exos/Techno-internet2_commerce/' . $image->url_image;
                             if (file_exists($file_path)) {
                                 unlink($file_path);
                             }
                         }
+                        
+                        // Suppression de l'image de la base de données via le DAO
+                        $productImageDAO->delete($image_id);
                     }
                 }
             }
@@ -221,32 +213,47 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             // Mise à jour de l'ordre des images
             if (isset($_POST['image_order']) && is_array($_POST['image_order'])) {
                 foreach ($_POST['image_order'] as $image_id => $order) {
-                    $stmt = $pdo->prepare("UPDATE images_products SET ordre = ? WHERE id = ? AND produit_id = ?");
-                    $stmt->execute([intval($order), intval($image_id), $id]);
+                    $productImageDAO->update(intval($image_id), ['ordre' => intval($order)]);
                 }
             }
             
             $success = "Le produit a bien été mis à jour !";
             
             // Rechargement des informations du produit après mise à jour
-            $stmt = $pdo->prepare("SELECT * FROM products WHERE id = ?");
-            $stmt->execute([$id]);
-            $product = $stmt->fetch();
+            $product = $productDAO->findById($id);
             
             // Rechargement des images
-            $stmt = $pdo->prepare("
-                SELECT id, url_image, ordre
-                FROM images_products
-                WHERE produit_id = ?
-                ORDER BY ordre ASC
-            ");
-            $stmt->execute([$id]);
-            $images = $stmt->fetchAll();
+            $images = $productImageDAO->findByProductId($id);
             
-        } catch (PDOException $e) {
+        } catch (Exception $e) {
             $error = "Erreur lors de la mise à jour du produit : " . $e->getMessage();
         }
     }
+}
+
+// Conversion des données du produit pour l'affichage
+$product_data = [];
+if ($product) {
+    $product_data = [
+        'id' => $product->id,
+        'titre' => $product->titre,
+        'description' => $product->description,
+        'prix' => $product->prix,
+        'stock' => $product->stock,
+        'categorie_id' => $product->categorie_id,
+        'image_principale' => $product->image_principale,
+        'actif' => $product->actif
+    ];
+}
+
+// Conversion des données des images pour l'affichage
+$images_data = [];
+foreach ($images as $image) {
+    $images_data[] = [
+        'id' => $image->id,
+        'url_image' => $image->url_image,
+        'ordre' => $image->ordre
+    ];
 }
 ?>
 
@@ -265,6 +272,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     
     <!-- CSS personnalisé -->
     <link rel="stylesheet" href="/Exos/Techno-internet2_commerce/admin/public/css/style.css">
+    
+    <?php 
+    // Ajouter la référence à la fonction add_body_class
+    if (!function_exists('add_body_class')) {
+        require_once __DIR__ . '/../src/php/utils/all_includes.php';
+    }
+    add_body_class(); // Ajout automatique de la classe admin-interface si nécessaire 
+    ?>
     
     <style>
         .product-image-container {
@@ -307,69 +322,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
     </style>
 </head>
-<body class="admin-interface">
+<body>
     <div class="container-fluid">
         <div class="row">
             <!-- Sidebar / Menu latéral -->
-            <div class="col-lg-2 admin-sidebar p-0">
-                <div class="p-3 text-center">
-                    <a href="accueil_admin.php" class="text-decoration-none">
-                        <h4><i class="fas fa-couch me-2"></i><span>Furniture</span></h4>
-                    </a>
-                    <div class="small">Administration</div>
-                </div>
-                <hr>
-                
-                <!-- Menu de navigation -->
-                <ul class="nav flex-column">
-                    <li class="nav-item">
-                        <a href="accueil_admin.php" class="nav-link">
-                            <i class="fas fa-tachometer-alt"></i> <span>Tableau de bord</span>
-                        </a>
-                    </li>
-                    <li class="nav-item">
-                        <a href="gestion_meubles.php" class="nav-link active">
-                            <i class="fas fa-couch"></i> <span>Gestion des meubles</span>
-                        </a>
-                    </li>
-                    <li class="nav-item">
-                        <a href="gestion_categories.php" class="nav-link">
-                            <i class="fas fa-tags"></i> <span>Gestion des catégories</span>
-                        </a>
-                    </li>
-                    <li class="nav-item">
-                        <a href="gestion_commandes.php" class="nav-link">
-                            <i class="fas fa-shopping-cart"></i> <span>Gestion des commandes</span>
-                        </a>
-                    </li>
-                    <li class="nav-item">
-                        <a href="gestion_clients.php" class="nav-link">
-                            <i class="fas fa-users"></i> <span>Gestion des clients</span>
-                        </a>
-                    </li>
-                    <li class="nav-item">
-                        <a href="statistiques.php" class="nav-link">
-                            <i class="fas fa-chart-bar"></i> <span>Statistiques</span>
-                        </a>
-                    </li>
-                </ul>
-                
-                <hr>
-                
-                <!-- Actions utilisateur -->
-                <ul class="nav flex-column mt-auto">
-                    <li class="nav-item">
-                        <a href="../../index_.php" class="nav-link">
-                            <i class="fas fa-home"></i> <span>Retour au site</span>
-                        </a>
-                    </li>
-                    <li class="nav-item">
-                        <a href="disconnect.php" class="nav-link text-danger">
-                            <i class="fas fa-sign-out-alt"></i> <span>Déconnexion</span>
-                        </a>
-                    </li>
-                </ul>
-            </div>
+            <?php generate_sidebar('products'); ?>
             
             <!-- Contenu principal -->
             <div class="col-lg-10 main-content">
@@ -413,23 +370,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                 <div class="col-md-8">
                                     <div class="mb-3">
                                         <label for="titre" class="form-label">Titre <span class="text-danger">*</span></label>
-                                        <input type="text" class="form-control" id="titre" name="titre" value="<?= htmlspecialchars($product['titre']) ?>" required>
+                                        <input type="text" class="form-control" id="titre" name="titre" value="<?= htmlspecialchars($product_data['titre']) ?>" required>
                                     </div>
                                     
                                     <div class="mb-3">
                                         <label for="description" class="form-label">Description</label>
-                                        <textarea class="form-control" id="description" name="description" rows="5"><?= htmlspecialchars($product['description']) ?></textarea>
+                                        <textarea class="form-control" id="description" name="description" rows="5"><?= htmlspecialchars($product_data['description']) ?></textarea>
                                     </div>
                                     
                                     <div class="row">
                                         <div class="col-md-6 mb-3">
                                             <label for="prix" class="form-label">Prix (€) <span class="text-danger">*</span></label>
-                                            <input type="number" class="form-control" id="prix" name="prix" step="0.01" min="0.01" value="<?= number_format($product['prix'], 2, '.', '') ?>" required>
+                                            <input type="number" class="form-control" id="prix" name="prix" step="0.01" min="0.01" value="<?= number_format($product_data['prix'], 2, '.', '') ?>" required>
                                         </div>
                                         
                                         <div class="col-md-6 mb-3">
                                             <label for="stock" class="form-label">Stock <span class="text-danger">*</span></label>
-                                            <input type="number" class="form-control" id="stock" name="stock" min="0" value="<?= $product['stock'] ?>" required>
+                                            <input type="number" class="form-control" id="stock" name="stock" min="0" value="<?= $product_data['stock'] ?>" required>
                                         </div>
                                     </div>
                                     
@@ -438,15 +395,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                         <select class="form-select" id="categorie_id" name="categorie_id">
                                             <option value="">Aucune catégorie</option>
                                             <?php foreach ($categories as $category): ?>
-                                                <option value="<?= $category['id'] ?>" <?= ($product['categorie_id'] == $category['id']) ? 'selected' : '' ?>>
-                                                    <?= htmlspecialchars($category['nom']) ?>
+                                                <option value="<?= $category->id ?>" <?= ($product_data['categorie_id'] == $category->id) ? 'selected' : '' ?>>
+                                                    <?= htmlspecialchars($category->nom) ?>
                                                 </option>
                                             <?php endforeach; ?>
                                         </select>
                                     </div>
                                     
                                     <div class="mb-3 form-check">
-                                        <input type="checkbox" class="form-check-input" id="actif" name="actif" <?= $product['actif'] ? 'checked' : '' ?>>
+                                        <input type="checkbox" class="form-check-input" id="actif" name="actif" <?= $product_data['actif'] ? 'checked' : '' ?>>
                                         <label class="form-check-label" for="actif">Produit actif</label>
                                     </div>
                                 </div>
@@ -454,9 +411,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                 <div class="col-md-4">
                                     <div class="mb-3">
                                         <label for="image_principale" class="form-label">Image principale</label>
-                                        <?php if (!empty($product['image_principale'])): ?>
+                                        <?php if (!empty($product_data['image_principale'])): ?>
                                             <div class="mb-2">
-                                                <img src="../../<?= htmlspecialchars($product['image_principale']) ?>" alt="Image principale" class="img-fluid img-thumbnail" style="max-height: 200px;">
+                                                <img src="../../<?= htmlspecialchars($product_data['image_principale']) ?>" alt="Image principale" class="img-fluid img-thumbnail" style="max-height: 200px;">
                                             </div>
                                         <?php endif; ?>
                                         <input type="file" class="form-control" id="image_principale" name="image_principale" accept="image/*">
@@ -473,11 +430,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                         </div>
                                     </div>
                                     
-                                    <?php if (!empty($images)): ?>
+                                    <?php if (!empty($images_data)): ?>
                                         <div class="mb-3">
                                             <label class="form-label">Images actuelles</label>
                                             <div class="row g-2">
-                                                <?php foreach ($images as $image): ?>
+                                                <?php foreach ($images_data as $image): ?>
                                                     <div class="col-6">
                                                         <div class="product-image-container">
                                                             <img src="../../<?= htmlspecialchars($image['url_image']) ?>" alt="Image produit" class="img-thumbnail">

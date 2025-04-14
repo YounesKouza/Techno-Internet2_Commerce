@@ -178,4 +178,41 @@ class CartDAO
             'cart_count' => 0
         ];
     }
+    
+    /**
+     * Gère toutes les actions sur le panier
+     * @param string $action L'action à effectuer (add, remove, update, get_cart, clear)
+     * @param array $params Les paramètres de l'action
+     * @return array Résultat de l'opération
+     */
+    public function processAction($action, $params = [])
+    {
+        switch ($action) {
+            case 'add':
+                return $this->addToCart(
+                    isset($params['product_id']) ? intval($params['product_id']) : 0,
+                    isset($params['quantity']) ? intval($params['quantity']) : 0
+                );
+                
+            case 'remove':
+                return $this->removeFromCart(
+                    isset($params['product_id']) ? intval($params['product_id']) : 0
+                );
+                
+            case 'update':
+                return $this->updateCartItem(
+                    isset($params['product_id']) ? intval($params['product_id']) : 0,
+                    isset($params['quantity']) ? intval($params['quantity']) : 0
+                );
+                
+            case 'get_cart':
+                return $this->getCartDetails();
+                
+            case 'clear':
+                return $this->clearCart();
+                
+            default:
+                return ['success' => false, 'message' => 'Action non reconnue'];
+        }
+    }
 }
