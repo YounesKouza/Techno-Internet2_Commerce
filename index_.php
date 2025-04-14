@@ -17,7 +17,7 @@ $allowed_pages = [
     'accueil', 'catalogue', 'produit_details', 
     'panier', 'commande', 'commande_succes',
     'login', 'inscription', 'deconnexion',
-    'compte' // Ajouter d'autres pages publiques ici
+    'compte', 'commande_details' // Ajout de la page commande_details
 ];
 
 // Chemin de base pour les pages
