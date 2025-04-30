@@ -3,46 +3,33 @@
  * Page d'ajout d'un nouveau meuble (produit)
  */
 
-// Démarrage de la session
+// Traitement des formulaires
 session_start();
 
-// Vérification si l'utilisateur est connecté et est administrateur
+// Vérification des droits d'accès
 if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'admin') {
-    // Redirection vers la page de connexion
     header('Location: ../../index_.php?page=login&redirect=admin');
     exit;
 }
 
-// Inclusion des fichiers nécessaires
-require_once '../src/php/utils/connexion.php';
-require_once '../src/php/utils/check_permissions.php';
-require_once '../src/php/utils/category_helper.php';
-require_once '../src/php/utils/sidebar.php';
 require_once '../src/php/utils/all_includes.php';
+require_once '../src/php/utils/category_helper.php';
+require_once '../src/php/classes/Product.class.php';
+require_once '../src/php/classes/Category.class.php';
+require_once '../src/php/classes/ProductDAO.class.php';
+require_once '../src/php/classes/CategoryDAO.class.php';
+require_once '../src/php/classes/ProductImageDAO.class.php';
 
-// Vérification des permissions des dossiers d'upload
-$upload_permissions = checkDirectoryPermissions('uploads/products');
-$permission_error = !$upload_permissions['success'] ? $upload_permissions['message'] : "";
+// Initialisation
+$db = getPDO();
+$productDAO = new ProductDAO($db);
+$categoryDAO = new CategoryDAO($db);
+$productImageDAO = new ProductImageDAO($db);
+$categories = $categoryDAO->findAll(); // Récupérer toutes les catégories
+$success = '';
+$error = '';
 
-// Initialisation des variables
-$pdo = getPDO();
-$error = "";
-$success = "";
-
-// Initialisation des objets DAO
-$productDAO = new ProductDAO($pdo);
-$categoryDAO = new CategoryDAO($pdo);
-$productImageDAO = new ProductImageDAO($pdo);
-
-// Récupération des catégories pour le formulaire
-try {
-    $categories = $categoryDAO->findAll();
-} catch (Exception $e) {
-    $error = "Erreur lors de la récupération des catégories : " . $e->getMessage();
-    $categories = [];
-}
-
-// Traitement du formulaire d'ajout
+// Traitement de l'ajout de produit
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     // Récupération des données du formulaire
     $titre = $_POST['titre'] ?? '';
@@ -208,21 +195,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     add_body_class(); // Ajout automatique de la classe admin-interface si nécessaire 
     ?>
 </head>
-<body>
+<body class="admin-interface">
     <div class="container-fluid">
         <div class="row">
             <!-- Sidebar -->
             <?php generate_sidebar('products'); ?>
-            
+
             <!-- Contenu principal -->
             <main class="col-md-9 ms-sm-auto col-lg-10 px-md-4 main-content">
                 <!-- Alertes de succès ou d'erreur -->
-                <?php if (!empty($permission_error)): ?>
-                <div class="alert alert-warning alert-dismissible fade show mt-3" role="alert">
-                    <strong>Attention aux permissions :</strong> <?php echo $permission_error; ?>
-                    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
-                </div>
-                <?php endif; ?>
                 
                 <?php if (!empty($success)): ?>
                 <div class="alert alert-success alert-dismissible fade show mt-3" role="alert">
@@ -286,7 +267,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                         <?php foreach ($categories as $category): ?>
                                             <option value="<?= $category->id ?>" <?= (isset($categorie_id) && $categorie_id == $category->id) ? 'selected' : '' ?>>
                                                 <?= htmlspecialchars($category->nom) ?>
-                                            </option>
+                                        </option>
                                         <?php endforeach; ?>
                                     </select>
                                 </div>
@@ -305,15 +286,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                         <label class="form-check-label" for="actif">
                                             Actif (visible sur le site)
                                         </label>
-                                    </div>
+                                </div>
                                 </div>
                                 
                                 <!-- Image principale -->
                                 <div class="col-md-12 mb-4">
                                     <label for="image_principale" class="form-label">Image principale <span class="text-danger">*</span></label>
                                     <input type="file" class="form-control" id="image_principale" name="image_principale" accept="image/*" required>
-                                    <div id="image_preview_container" class="mt-2 d-none">
-                                        <img id="image_preview" src="#" alt="Aperçu de l'image" class="img-thumbnail" style="max-height: 150px;">
+                                    <div class="mb-2">
+                                        <img id="image_preview" src="#" alt="Aperçu de l'image" class="img-thumbnail preview-thumb">
                                     </div>
                                     <div class="form-text">L'image principale apparaîtra comme image de couverture du produit. Formats acceptés : JPG, PNG, GIF, WebP.</div>
                                 </div>
@@ -340,56 +321,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             </main>
         </div>
     </div>
-    
+
     <!-- Bootstrap Bundle with Popper -->
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
     
     <!-- jQuery -->
     <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
     
-    <!-- Script pour l'aperçu des images -->
-    <script>
-        // Aperçu de l'image principale
-        document.getElementById('image_principale').addEventListener('change', function() {
-            const file = this.files[0];
-            if (file) {
-                const reader = new FileReader();
-                reader.onload = function(e) {
-                    const preview = document.getElementById('image_preview');
-                    preview.src = e.target.result;
-                    document.getElementById('image_preview_container').classList.remove('d-none');
-                }
-                reader.readAsDataURL(file);
-            }
-        });
-        
-        // Aperçu des images supplémentaires
-        document.getElementById('images').addEventListener('change', function() {
-            const previewContainer = document.getElementById('additional_images_preview');
-            previewContainer.innerHTML = '';
-            
-            for (let i = 0; i < this.files.length; i++) {
-                const file = this.files[i];
-                if (file) {
-                    const reader = new FileReader();
-                    reader.onload = function(e) {
-                        const col = document.createElement('div');
-                        col.className = 'col-auto';
-                        
-                        const img = document.createElement('img');
-                        img.src = e.target.result;
-                        img.className = 'img-thumbnail';
-                        img.style.height = '100px';
-                        img.alt = 'Aperçu image ' + (i + 1);
-                        
-                        col.appendChild(img);
-                        previewContainer.appendChild(col);
-                    }
-                    reader.readAsDataURL(file);
-                }
-            }
-        });
-    </script>
+    <!-- JavaScript principal -->
+    <script src="/Exos/Techno-internet2_commerce/admin/public/js/fonction.js"></script>
 </body>
 </html>
 

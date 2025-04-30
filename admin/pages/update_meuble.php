@@ -277,52 +277,11 @@ foreach ($images as $image) {
     // Ajouter la référence à la fonction add_body_class
     if (!function_exists('add_body_class')) {
         require_once __DIR__ . '/../src/php/utils/all_includes.php';
-    }
+        }
     add_body_class(); // Ajout automatique de la classe admin-interface si nécessaire 
     ?>
-    
-    <style>
-        .product-image-container {
-            position: relative;
-            margin-bottom: 15px;
-        }
-        
-        .product-image-container img {
-            width: 100%;
-            height: 150px;
-            object-fit: cover;
-            border-radius: 4px;
-        }
-        
-        .image-actions {
-            position: absolute;
-            top: 5px;
-            right: 5px;
-            display: flex;
-            gap: 5px;
-        }
-        
-        .image-actions button {
-            background-color: rgba(255, 255, 255, 0.8);
-            border: none;
-            border-radius: 50%;
-            width: 30px;
-            height: 30px;
-            font-size: 12px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            cursor: pointer;
-        }
-        
-        .image-order {
-            width: 50px;
-            text-align: center;
-            margin-top: 5px;
-        }
-    </style>
 </head>
-<body>
+<body class="admin-interface">
     <div class="container-fluid">
         <div class="row">
             <!-- Sidebar / Menu latéral -->
@@ -413,7 +372,7 @@ foreach ($images as $image) {
                                         <label for="image_principale" class="form-label">Image principale</label>
                                         <?php if (!empty($product_data['image_principale'])): ?>
                                             <div class="mb-2">
-                                                <img src="../../<?= htmlspecialchars($product_data['image_principale']) ?>" alt="Image principale" class="img-fluid img-thumbnail" style="max-height: 200px;">
+                                                <img src="../../<?= htmlspecialchars($product_data['image_principale']) ?>" alt="Image principale" class="img-fluid img-thumbnail preview-thumb">
                                             </div>
                                         <?php endif; ?>
                                         <input type="file" class="form-control" id="image_principale" name="image_principale" accept="image/*">
@@ -443,7 +402,7 @@ foreach ($images as $image) {
                                                                     <i class="fas fa-trash-alt text-danger"></i>
                                                                 </button>
                                                             </div>
-                                                            <input type="checkbox" name="delete_images[]" value="<?= $image['id'] ?>" id="delete_image_<?= $image['id'] ?>" style="display: none;">
+                                                            <input type="checkbox" name="delete_images[]" value="<?= $image['id'] ?>" id="delete_image_<?= $image['id'] ?>" class="d-none">
                                                             <input type="number" name="image_order[<?= $image['id'] ?>]" value="<?= $image['ordre'] ?>" class="form-control form-control-sm image-order" min="0" title="Ordre d'affichage">
                                                         </div>
                                                     </div>
@@ -483,24 +442,7 @@ foreach ($images as $image) {
     <!-- jQuery -->
     <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
     
-    <script>
-        // Fonction pour basculer la suppression d'une image
-        function toggleDeleteImage(imageId) {
-            const checkbox = document.getElementById('delete_image_' + imageId);
-            const button = checkbox.parentElement.querySelector('.btn-delete');
-            
-            if (checkbox.checked) {
-                checkbox.checked = false;
-                button.classList.remove('btn-danger');
-                button.classList.add('btn-outline-danger');
-                button.innerHTML = '<i class="fas fa-trash-alt text-danger"></i>';
-            } else {
-                checkbox.checked = true;
-                button.classList.remove('btn-outline-danger');
-                button.classList.add('btn-danger');
-                button.innerHTML = '<i class="fas fa-trash-alt text-white"></i>';
-            }
-        }
-    </script>
+    <!-- JavaScript principal -->
+    <script src="/Exos/Techno-internet2_commerce/admin/public/js/fonction.js"></script>
 </body>
 </html>

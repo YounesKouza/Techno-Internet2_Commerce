@@ -47,6 +47,11 @@ class ProductImageDAO
             
             $images = [];
             while ($data = $stmt->fetch(PDO::FETCH_ASSOC)) {
+                // Vérification et correction du chemin d'image
+                if (!empty($data['url_image']) && strpos($data['url_image'], 'http') !== 0) {
+                    // S'assurer que le chemin est relatif et ne commence pas par '/'
+                    $data['url_image'] = ltrim($data['url_image'], '/');
+                }
                 $images[] = new ProductImage($data);
             }
             

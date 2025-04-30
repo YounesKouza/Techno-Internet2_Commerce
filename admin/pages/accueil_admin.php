@@ -258,7 +258,7 @@ $low_stock = $productDAO->findLowStock(5);
                                         <p class="text-muted">Aucun produit vendu pour le moment</p>
                                     </div>
                                 <?php else: ?>
-                                    <?php foreach ($best_sellers as $product): ?>
+                                        <?php foreach ($best_sellers as $product): ?>
                                     <div class="best-selling-product-item">
                                         <img 
                                             src="<?php 
@@ -325,7 +325,7 @@ $low_stock = $productDAO->findLowStock(5);
                                                 <td><?= htmlspecialchars($user->email) ?></td>
                                                 <td><?= date('d/m/Y H:i', strtotime($user->date_inscription ?? $user->created_at)) ?></td>
                                                 <td>
-                                                    <a href="gestion_clients.php?id=<?= $user->id ?>" class="btn btn-sm btn-outline-primary">
+                                                    <a href="gestion_clients.php?action=view&user_id=<?= $user->id ?>" class="btn btn-sm btn-outline-primary">
                                                         <i class="fas fa-eye"></i>
                                                     </a>
                                                 </td>
@@ -355,5 +355,8 @@ $low_stock = $productDAO->findLowStock(5);
     
     <!-- jQuery -->
     <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+    
+    <!-- JavaScript principal -->
+    <script src="/Exos/Techno-internet2_commerce/admin/public/js/fonction.js"></script>
 </body>
 </html> 

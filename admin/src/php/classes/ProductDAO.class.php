@@ -16,18 +16,59 @@ class ProductDAO
      */
     public function findById($id)
     {
+        // On utilise une requête SQL directe plutôt que la fonction PL/pgSQL pour garantir la récupération de tous les champs
         $query = "SELECT p.*, c.nom as categorie_nom 
                   FROM products p 
                   LEFT JOIN categories c ON p.categorie_id = c.id 
                   WHERE p.id = :id";
+        
         try {
+            error_log("Exécution findById pour ID=$id");
+            
             $stmt = $this->_bd->prepare($query);
             $stmt->bindValue(':id', $id, PDO::PARAM_INT);
             $stmt->execute();
             
             if ($data = $stmt->fetch(PDO::FETCH_ASSOC)) {
-                return new Product($data);
+                error_log("Données produit récupérées: " . print_r($data, true));
+                
+                // Vérification explicite du stock
+                if (!isset($data['stock'])) {
+                    // Si le stock n'est pas défini dans les données, faisons une requête spécifique pour le récupérer
+                    $stockQuery = "SELECT stock FROM products WHERE id = :id";
+                    $stockStmt = $this->_bd->prepare($stockQuery);
+                    $stockStmt->bindValue(':id', $id, PDO::PARAM_INT);
+                    $stockStmt->execute();
+                    
+                    if ($stockData = $stockStmt->fetch(PDO::FETCH_ASSOC)) {
+                        $data['stock'] = $stockData['stock'];
+                        error_log("Stock récupéré séparément: " . $data['stock']);
+                    } else {
+                        $data['stock'] = 0;
+                        error_log("Stock non trouvé, défini à 0");
+                    }
+                }
+                
+                // Vérification et correction du chemin d'image
+                if (!empty($data['image_principale']) && strpos($data['image_principale'], 'http') !== 0) {
+                    $data['image_principale'] = ltrim($data['image_principale'], '/');
+                }
+                
+                // Convertir explicitement le stock en entier
+                if (isset($data['stock'])) {
+                    $data['stock'] = (int)$data['stock'];
+                    error_log("Stock après conversion: " . $data['stock']);
+                }
+                
+                $product = new Product($data);
+                
+                // Vérification que le stock est bien défini dans l'objet Product
+                error_log("Vérification stock dans l'objet: " . ($product->stock ?? 'NULL'));
+                
+                return $product;
             }
+            
+            error_log("Aucun produit trouvé avec ID=$id");
             return false;
         } catch (PDOException $e) {
             error_log("Erreur lors de la récupération du produit: " . $e->getMessage());
@@ -126,7 +167,16 @@ class ProductDAO
      */
     public function findAllActive($categoryId = null, $active = true, $orderBy = 'p.date_creation DESC', $limit = null, $offset = null, $featured = null)
     {
-        return $this->findAll($categoryId, $active, $orderBy, $limit, $offset, $featured);
+        $products = $this->findAll($categoryId, $active, $orderBy, $limit, $offset, $featured);
+        
+        // Corriger les chemins d'images
+        foreach ($products as $product) {
+            if (!empty($product->image_principale) && strpos($product->image_principale, 'http') !== 0) {
+                $product->image_principale = ltrim($product->image_principale, '/');
+            }
+        }
+        
+        return $products;
     }
 
     /**
@@ -255,11 +305,9 @@ class ProductDAO
      */
     public function create(array $data)
     {
-        $query = "INSERT INTO products (titre, description, prix, stock, categorie_id, image_principale, actif) 
-                  VALUES (:titre, :description, :prix, :stock, :categorie_id, :image_principale, :actif)";
-        
         try {
-            $this->_bd->beginTransaction();
+            $query = "SELECT create_product(:titre, :description, :prix, :stock, :categorie_id, :image_principale, :actif) AS product_id";
+            
             $stmt = $this->_bd->prepare($query);
             $stmt->bindValue(':titre', $data['titre']);
             $stmt->bindValue(':description', $data['description'] ?? null);
@@ -269,13 +317,11 @@ class ProductDAO
             $stmt->bindValue(':image_principale', $data['image_principale'] ?? null);
             $stmt->bindValue(':actif', $data['actif'] ?? true, PDO::PARAM_BOOL);
             
-            $result = $stmt->execute();
-            $id = $this->_bd->lastInsertId();
-            $this->_bd->commit();
+            $stmt->execute();
+            $result = $stmt->fetch(PDO::FETCH_ASSOC);
             
-            return $result ? $id : false;
+            return $result ? (int)$result['product_id'] : false;
         } catch (PDOException $e) {
-            $this->_bd->rollback();
             error_log("Erreur lors de la création du produit: " . $e->getMessage());
             return false;
         }
@@ -289,34 +335,46 @@ class ProductDAO
      */
     public function update($id, array $data)
     {
-        $fieldsToUpdate = [];
-        $params = [':id' => $id];
-
-        foreach ($data as $key => $value) {
-            if ($key !== 'id' && $key !== 'date_creation') {
-                $fieldsToUpdate[] = "$key = :$key";
-                $params[":$key"] = $value;
-            }
-        }
-
-        if (empty($fieldsToUpdate)) {
+        try {
+            // Vérifier le contenu de data pour debug
+            error_log("ProductDAO::update - Données reçues: " . json_encode($data));
+            
+            // Si la mise à jour ne concerne que certains champs (comme l'image principale)
+            // on récupère d'abord le produit existant pour avoir toutes les données
+            if (!isset($data['prix']) || !isset($data['titre'])) {
+                $existingProduct = $this->findById($id);
+                if (!$existingProduct) {
+                    error_log("ProductDAO::update - Produit non trouvé avec ID: " . $id);
             return false;
         }
 
-        $query = "UPDATE products SET " . implode(', ', $fieldsToUpdate) . " WHERE id = :id";
-        
-        try {
-            $this->_bd->beginTransaction();
-            $stmt = $this->_bd->prepare($query);
-            foreach ($params as $param => $val) {
-                $stmt->bindValue($param, $val);
+                // Utilise les valeurs existantes si non fournies dans data
+                if (!isset($data['titre'])) $data['titre'] = $existingProduct->titre;
+                if (!isset($data['description'])) $data['description'] = $existingProduct->description;
+                if (!isset($data['prix'])) $data['prix'] = $existingProduct->prix;
+                if (!isset($data['stock'])) $data['stock'] = $existingProduct->stock;
+                if (!isset($data['categorie_id'])) $data['categorie_id'] = $existingProduct->categorie_id;
+                if (!isset($data['image_principale'])) $data['image_principale'] = $existingProduct->image_principale;
+                if (!isset($data['actif'])) $data['actif'] = $existingProduct->actif;
             }
-            $result = $stmt->execute();
-            $this->_bd->commit();
             
-            return $result;
+            $query = "SELECT update_product(:id, :titre, :description, :prix, :stock, :categorie_id, :image_principale, :actif) AS success";
+            
+            $stmt = $this->_bd->prepare($query);
+            $stmt->bindValue(':id', $id, PDO::PARAM_INT);
+            $stmt->bindValue(':titre', $data['titre']);
+            $stmt->bindValue(':description', $data['description'] ?? null);
+            $stmt->bindValue(':prix', $data['prix']);
+            $stmt->bindValue(':stock', $data['stock'] ?? 0, PDO::PARAM_INT);
+            $stmt->bindValue(':categorie_id', $data['categorie_id'] ?? null, PDO::PARAM_INT);
+            $stmt->bindValue(':image_principale', $data['image_principale'] ?? null);
+            $stmt->bindValue(':actif', $data['actif'] ?? true, PDO::PARAM_BOOL);
+            
+            $stmt->execute();
+            $result = $stmt->fetch(PDO::FETCH_ASSOC);
+            
+            return $result && isset($result['success']) && $result['success'];
         } catch (PDOException $e) {
-            $this->_bd->rollback();
             error_log("Erreur lors de la mise à jour du produit: " . $e->getMessage());
             return false;
         }
@@ -324,24 +382,25 @@ class ProductDAO
 
     /**
      * Met à jour le stock d'un produit
-     * @param int $id ID du produit
-     * @param int $quantity Quantité à ajouter (positif) ou retirer (négatif)
-     * @return bool Succès ou échec
+     * @param int $productId ID du produit
+     * @param int $quantity Quantité à soustraire du stock
+     * @return boolean Succès de l'opération
      */
-    public function updateStock($id, $quantity)
+    public function updateStock($productId, $quantity)
     {
-        $query = "UPDATE products SET stock = stock + :quantity WHERE id = :id";
         try {
-            $this->_bd->beginTransaction();
-            $stmt = $this->_bd->prepare($query);
-            $stmt->bindValue(':id', $id, PDO::PARAM_INT);
-            $stmt->bindValue(':quantity', $quantity, PDO::PARAM_INT);
-            $result = $stmt->execute();
-            $this->_bd->commit();
+            // Utiliser la fonction PostgreSQL update_product_stock
+            $query = "SELECT update_product_stock(:product_id, :quantity)";
             
-            return $result;
-        } catch (PDOException $e) {
-            $this->_bd->rollback();
+            $stmt = $this->_bd->prepare($query);
+            $stmt->bindValue(':product_id', $productId, PDO::PARAM_INT);
+            $stmt->bindValue(':quantity', $quantity, PDO::PARAM_INT);
+            
+            $stmt->execute();
+            $result = $stmt->fetch(PDO::FETCH_ASSOC);
+            
+            return $result && isset($result['update_product_stock']) && $result['update_product_stock'];
+        } catch (Exception $e) {
             error_log("Erreur lors de la mise à jour du stock: " . $e->getMessage());
             return false;
         }
@@ -354,17 +413,17 @@ class ProductDAO
      */
     public function delete($id)
     {
-        $query = "DELETE FROM products WHERE id = :id";
         try {
-            $this->_bd->beginTransaction();
+            $query = "SELECT delete_product(:id) AS success";
+            
             $stmt = $this->_bd->prepare($query);
             $stmt->bindValue(':id', $id, PDO::PARAM_INT);
-            $result = $stmt->execute();
-            $this->_bd->commit();
             
-            return $result;
+            $stmt->execute();
+            $result = $stmt->fetch(PDO::FETCH_ASSOC);
+            
+            return $result && isset($result['success']) && $result['success'];
         } catch (PDOException $e) {
-            $this->_bd->rollback();
             error_log("Erreur lors de la suppression du produit: " . $e->getMessage());
             return false;
         }
@@ -378,18 +437,18 @@ class ProductDAO
      */
     public function setActive($id, $active)
     {
-        $query = "UPDATE products SET actif = :actif WHERE id = :id";
         try {
-            $this->_bd->beginTransaction();
+            $query = "SELECT toggle_active_status(:id, :actif) AS success";
+            
             $stmt = $this->_bd->prepare($query);
             $stmt->bindValue(':id', $id, PDO::PARAM_INT);
             $stmt->bindValue(':actif', $active, PDO::PARAM_BOOL);
-            $result = $stmt->execute();
-            $this->_bd->commit();
             
-            return $result;
+            $stmt->execute();
+            $result = $stmt->fetch(PDO::FETCH_ASSOC);
+            
+            return $result && isset($result['success']) && $result['success'];
         } catch (PDOException $e) {
-            $this->_bd->rollback();
             error_log("Erreur lors de la modification du statut actif: " . $e->getMessage());
             return false;
         }
@@ -423,17 +482,17 @@ class ProductDAO
      */
     public function clearCategoryForProducts($categoryId)
     {
-        $query = "UPDATE products SET categorie_id = NULL WHERE categorie_id = :categorie_id";
         try {
-            $this->_bd->beginTransaction();
+            $query = "SELECT clear_category_reference(:categorie_id) AS success";
+            
             $stmt = $this->_bd->prepare($query);
             $stmt->bindValue(':categorie_id', $categoryId, PDO::PARAM_INT);
-            $result = $stmt->execute();
-            $this->_bd->commit();
             
-            return $result;
+            $stmt->execute();
+            $result = $stmt->fetch(PDO::FETCH_ASSOC);
+            
+            return $result && isset($result['success']) && $result['success'];
         } catch (PDOException $e) {
-            $this->_bd->rollback();
             error_log("Erreur lors de l'effacement de la catégorie des produits: " . $e->getMessage());
             return false;
         }
@@ -551,18 +610,18 @@ class ProductDAO
      */
     public function toggleActiveStatus($id, $active = true)
     {
-        $query = "UPDATE products SET actif = :actif WHERE id = :id";
         try {
-            $this->_bd->beginTransaction();
+            $query = "SELECT toggle_active_status(:id, :actif) AS success";
+            
             $stmt = $this->_bd->prepare($query);
             $stmt->bindValue(':id', $id, PDO::PARAM_INT);
             $stmt->bindValue(':actif', $active, PDO::PARAM_BOOL);
-            $result = $stmt->execute();
-            $this->_bd->commit();
             
-            return $result;
+            $stmt->execute();
+            $result = $stmt->fetch(PDO::FETCH_ASSOC);
+            
+            return $result && isset($result['success']) && $result['success'];
         } catch (PDOException $e) {
-            $this->_bd->rollback();
             error_log("Erreur lors de la modification du statut actif du produit: " . $e->getMessage());
             return false;
         }

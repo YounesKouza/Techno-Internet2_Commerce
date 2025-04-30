@@ -53,11 +53,6 @@ function generate_sidebar($active_page = '') {
                 <i class="fas fa-chart-bar me-2"></i> Statistiques
             </a>
         </li>
-        <li class="nav-item">
-            <a href="diagnostic.php" class="nav-link text-white <?= $active_page === 'diagnostic' ? 'active' : '' ?>">
-                <i class="fas fa-stethoscope me-2"></i> Diagnostic système
-            </a>
-        </li>
     </ul>
     
     <hr class="bg-white">

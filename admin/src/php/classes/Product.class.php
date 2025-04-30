@@ -30,4 +30,14 @@ class Product
     {
         $this->_attributs[$champ] = $valeur;
     }
+    
+    /**
+     * Méthode magique pour vérifier si un attribut existe
+     * @param string $champ Nom de l'attribut à vérifier
+     * @return bool True si l'attribut existe, false sinon
+     */
+    public function __isset($champ)
+    {
+        return isset($this->_attributs[$champ]);
+    }
 }

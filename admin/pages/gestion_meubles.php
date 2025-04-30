@@ -131,11 +131,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_product'])) {
                             <div class="col-md-4">
                                 <div class="form-group">
                                     <label>Rechercher</label>
-                                    <div class="input-group">
-                                        <input type="text" class="form-control" name="search" placeholder="Rechercher un produit..." value="<?= $search ?>">
+                                <div class="input-group">
+                                    <input type="text" class="form-control" name="search" placeholder="Rechercher un produit..." value="<?= $search ?>">
                                         <button class="btn btn-primary" type="submit">
-                                            <i class="fas fa-search"></i>
-                                        </button>
+                                        <i class="fas fa-search"></i>
+                                    </button>
                                     </div>
                                 </div>
                             </div>
@@ -146,12 +146,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_product'])) {
                                     <label>Catégorie</label>
                                     <select class="form-select" id="category-filter" name="category">
                                         <option value="">Toutes les catégories</option>
-                                        <?php foreach ($categories as $category): ?>
+                                    <?php foreach ($categories as $category): ?>
                                             <option value="<?= $category->id ?>" <?= $category_filter == $category->id ? 'selected' : '' ?>>
                                                 <?= htmlspecialchars($category->nom) ?>
-                                            </option>
-                                        <?php endforeach; ?>
-                                    </select>
+                                        </option>
+                                    <?php endforeach; ?>
+                                </select>
                                 </div>
                             </div>
                             
@@ -159,16 +159,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_product'])) {
                             <div class="col-md-3">
                                 <div class="form-group">
                                     <label>Trier par</label>
-                                    <select name="sort" class="form-select">
-                                        <option value="id_asc" <?= $sort === 'id_asc' ? 'selected' : '' ?>>ID (croissant)</option>
-                                        <option value="id_desc" <?= $sort === 'id_desc' ? 'selected' : '' ?>>ID (décroissant)</option>
-                                        <option value="name_asc" <?= $sort === 'name_asc' ? 'selected' : '' ?>>Nom (A-Z)</option>
-                                        <option value="name_desc" <?= $sort === 'name_desc' ? 'selected' : '' ?>>Nom (Z-A)</option>
-                                        <option value="price_asc" <?= $sort === 'price_asc' ? 'selected' : '' ?>>Prix (croissant)</option>
-                                        <option value="price_desc" <?= $sort === 'price_desc' ? 'selected' : '' ?>>Prix (décroissant)</option>
-                                        <option value="stock_asc" <?= $sort === 'stock_asc' ? 'selected' : '' ?>>Stock (faible-élevé)</option>
-                                        <option value="stock_desc" <?= $sort === 'stock_desc' ? 'selected' : '' ?>>Stock (élevé-faible)</option>
-                                    </select>
+                                <select name="sort" class="form-select">
+                                    <option value="id_asc" <?= $sort === 'id_asc' ? 'selected' : '' ?>>ID (croissant)</option>
+                                    <option value="id_desc" <?= $sort === 'id_desc' ? 'selected' : '' ?>>ID (décroissant)</option>
+                                    <option value="name_asc" <?= $sort === 'name_asc' ? 'selected' : '' ?>>Nom (A-Z)</option>
+                                    <option value="name_desc" <?= $sort === 'name_desc' ? 'selected' : '' ?>>Nom (Z-A)</option>
+                                    <option value="price_asc" <?= $sort === 'price_asc' ? 'selected' : '' ?>>Prix (croissant)</option>
+                                    <option value="price_desc" <?= $sort === 'price_desc' ? 'selected' : '' ?>>Prix (décroissant)</option>
+                                    <option value="stock_asc" <?= $sort === 'stock_asc' ? 'selected' : '' ?>>Stock (faible-élevé)</option>
+                                    <option value="stock_desc" <?= $sort === 'stock_desc' ? 'selected' : '' ?>>Stock (élevé-faible)</option>
+                                </select>
                                 </div>
                             </div>
                             
@@ -193,7 +193,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_product'])) {
                             <table class="table admin-table table-hover align-middle mb-0">
                                 <thead>
                                     <tr>
-                                        <th style="width: 70px">ID</th>
+                                        <th class="col-id">ID</th>
+                                        <th class="col-img">Image</th>
                                         <th>Nom</th>
                                         <th>Catégorie</th>
                                         <th>Prix</th>
@@ -232,14 +233,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_product'])) {
                                                 </td>
                                                 <td>
                                                     <a href="update_meuble.php?id=<?= $product->id ?>" class="btn btn-outline-primary" title="Modifier">
-                                                        <i class="fas fa-edit"></i>
-                                                    </a>
-                                                    <button type="button" class="btn btn-outline-danger" 
-                                                            data-bs-toggle="modal" 
+                                                            <i class="fas fa-edit"></i>
+                                                        </a>
+                                                        <button type="button" class="btn btn-outline-danger" 
+                                                                data-bs-toggle="modal" 
                                                             data-bs-target="#deleteProductModal<?= $product->id ?>" 
-                                                            title="Supprimer">
+                                                                title="Supprimer">
                                                         <i class="fas fa-trash"></i>
-                                                    </button>
+                                                        </button>
                                                     
                                                     <!-- Modal de confirmation de suppression -->
                                                     <div class="modal fade" id="deleteProductModal<?= $product->id ?>" tabindex="-1" aria-hidden="true">
@@ -345,5 +346,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_product'])) {
     
     <!-- jQuery -->
     <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+    
+    <!-- JavaScript principal -->
+    <script src="/Exos/Techno-internet2_commerce/admin/public/js/fonction.js"></script>
 </body>
 </html> 

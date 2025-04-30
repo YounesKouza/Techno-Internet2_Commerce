@@ -141,6 +141,11 @@ $avg_monthly_sales = $total_months > 0 ? $total_sales / $total_months : 0;
     
     <!-- CSS personnalisé -->
     <link rel="stylesheet" href="/Exos/Techno-internet2_commerce/admin/public/css/style.css">
+    
+    <?php 
+    // Appel à la fonction add_body_class pour ajouter automatiquement la classe admin-interface si nécessaire
+    add_body_class();
+    ?>
 </head>
 <body class="admin-interface">
     <div class="container-fluid">
@@ -262,7 +267,7 @@ $avg_monthly_sales = $total_months > 0 ? $total_sales / $total_months : 0;
                                 <h5 class="mb-0">Évolution des ventes</h5>
                             </div>
                             <div class="card-body">
-                                <canvas id="salesChart"></canvas>
+                                    <canvas id="salesChart"></canvas>
                             </div>
                         </div>
                     </div>
@@ -325,7 +330,7 @@ $avg_monthly_sales = $total_months > 0 ? $total_sales / $total_months : 0;
                                 </thead>
                                 <tbody>
                                     <?php foreach ($top_products as $index => $product): ?>
-                                        <tr>
+                                            <tr>
                                             <td><?= $index + 1 ?></td>
                                             <td><?= htmlspecialchars($product->name) ?></td>
                                             <td><?= number_format($product->price, 2, ',', ' ') ?> €</td>
@@ -354,10 +359,28 @@ $avg_monthly_sales = $total_months > 0 ? $total_sales / $total_months : 0;
     <!-- jQuery -->
     <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
     
-    <!-- Initialisation des graphiques -->
+    <!-- JavaScript principal -->
+    <script src="/Exos/Techno-internet2_commerce/admin/public/js/fonction.js"></script>
+    
+    <!-- JavaScript pour les graphiques -->
     <script>
+        // Transmission des données PHP vers JavaScript
+        const chartData = {
+            months_labels: <?= json_encode($months_labels) ?>,
+            sales_values: <?= json_encode($sales_values) ?>,
+            users_values: <?= json_encode($users_values) ?>,
+            category_names: <?= json_encode($category_names) ?>,
+            category_sales: <?= json_encode($category_sales) ?>,
+            status_labels: <?= json_encode($status_labels) ?>,
+            status_counts: <?= json_encode($status_counts) ?>
+        };
+        
+        // Définir window.chartData pour être accessible dans fonction.js
+        window.chartData = chartData;
+        
+        // Initialisation des graphiques
         document.addEventListener('DOMContentLoaded', function() {
-            // Chart.js configuration globale
+            // Configuration globale de Chart.js
             Chart.defaults.font.family = "'Poppins', 'Helvetica', 'Arial', sans-serif";
             Chart.defaults.font.size = 12;
             Chart.defaults.color = '#555';
@@ -367,10 +390,10 @@ $avg_monthly_sales = $total_months > 0 ? $total_sales / $total_months : 0;
             const salesChart = new Chart(salesCtx, {
                 type: 'line',
                 data: {
-                    labels: <?= json_encode($months_labels) ?>,
+                    labels: chartData.months_labels,
                     datasets: [{
                         label: 'Chiffre d\'affaires (€)',
-                        data: <?= json_encode($sales_values) ?>,
+                        data: chartData.sales_values,
                         backgroundColor: 'rgba(13, 110, 253, 0.2)',
                         borderColor: 'rgba(13, 110, 253, 1)',
                         borderWidth: 2,
@@ -411,9 +434,9 @@ $avg_monthly_sales = $total_months > 0 ? $total_sales / $total_months : 0;
             const categoryChart = new Chart(categoryCtx, {
                 type: 'doughnut',
                 data: {
-                    labels: <?= json_encode($category_names) ?>,
+                    labels: chartData.category_names,
                     datasets: [{
-                        data: <?= json_encode($category_sales) ?>,
+                        data: chartData.category_sales,
                         backgroundColor: [
                             'rgba(13, 110, 253, 0.7)',   // Bleu
                             'rgba(25, 135, 84, 0.7)',    // Vert
@@ -459,10 +482,10 @@ $avg_monthly_sales = $total_months > 0 ? $total_sales / $total_months : 0;
             const usersChart = new Chart(usersCtx, {
                 type: 'bar',
                 data: {
-                    labels: <?= json_encode($months_labels) ?>,
+                    labels: chartData.months_labels,
                     datasets: [{
                         label: 'Nouveaux clients',
-                        data: <?= json_encode($users_values) ?>,
+                        data: chartData.users_values,
                         backgroundColor: 'rgba(23, 162, 184, 0.7)',
                         borderColor: 'rgba(23, 162, 184, 1)',
                         borderWidth: 1
@@ -493,9 +516,9 @@ $avg_monthly_sales = $total_months > 0 ? $total_sales / $total_months : 0;
             const statusChart = new Chart(statusCtx, {
                 type: 'pie',
                 data: {
-                    labels: <?= json_encode($status_labels) ?>,
+                    labels: chartData.status_labels,
                     datasets: [{
-                        data: <?= json_encode($status_counts) ?>,
+                        data: chartData.status_counts,
                         backgroundColor: [
                             'rgba(25, 135, 84, 0.7)',   // Vert (completed)
                             'rgba(13, 110, 253, 0.7)',  // Bleu (processing)

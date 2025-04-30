@@ -40,24 +40,20 @@ class OrderLineDAO
     public function create(array $data)
     {
         try {
-            $this->_bd->beginTransaction();
-            
-            $query = "INSERT INTO order_lines (order_id, produit_id, quantite, prix_unitaire) 
-                      VALUES (:order_id, :produit_id, :quantite, :prix_unitaire)";
+            // Utiliser la fonction PostgreSQL add_order_line
+            $query = "SELECT add_order_line(:order_id, :produit_id, :quantite, :prix_unitaire) AS line_id";
             
             $stmt = $this->_bd->prepare($query);
             $stmt->bindValue(':order_id', $data['order_id'], PDO::PARAM_INT);
             $stmt->bindValue(':produit_id', $data['produit_id'], PDO::PARAM_INT);
             $stmt->bindValue(':quantite', $data['quantite'], PDO::PARAM_INT);
             $stmt->bindValue(':prix_unitaire', $data['prix_unitaire'], PDO::PARAM_STR);
+            $stmt->execute();
             
-            $result = $stmt->execute();
-            $id = $this->_bd->lastInsertId();
-            $this->_bd->commit();
+            $result = $stmt->fetch(PDO::FETCH_ASSOC);
             
-            return $result ? $id : false;
+            return $result && isset($result['line_id']) ? $result['line_id'] : false;
         } catch (PDOException $e) {
-            $this->_bd->rollback();
             error_log("Erreur lors de la création de la ligne de commande: " . $e->getMessage());
             return false;
         }
@@ -122,34 +118,20 @@ class OrderLineDAO
      */
     public function update($id, array $data)
     {
-        $fieldsToUpdate = [];
-        $params = [':id' => $id];
-
-        foreach ($data as $key => $value) {
-            if ($key !== 'id') {
-                $fieldsToUpdate[] = "$key = :$key";
-                $params[":$key"] = $value;
-            }
-        }
-
-        if (empty($fieldsToUpdate)) {
-            return false;
-        }
-
-        $query = "UPDATE order_lines SET " . implode(', ', $fieldsToUpdate) . " WHERE id = :id";
-        
         try {
-            $this->_bd->beginTransaction();
-            $stmt = $this->_bd->prepare($query);
-            foreach ($params as $param => $val) {
-                $stmt->bindValue($param, $val);
-            }
-            $result = $stmt->execute();
-            $this->_bd->commit();
+            // Utiliser la fonction PostgreSQL update_order_line
+            $query = "SELECT update_order_line(:id, :order_id, :produit_id, :quantite, :prix_unitaire)";
             
-            return $result;
+            $stmt = $this->_bd->prepare($query);
+            $stmt->bindValue(':id', $id, PDO::PARAM_INT);
+            $stmt->bindValue(':order_id', $data['order_id'], PDO::PARAM_INT);
+            $stmt->bindValue(':produit_id', $data['produit_id'], PDO::PARAM_INT);
+            $stmt->bindValue(':quantite', $data['quantite'], PDO::PARAM_INT);
+            $stmt->bindValue(':prix_unitaire', $data['prix_unitaire'], PDO::PARAM_STR);
+            $stmt->execute();
+            
+            return $stmt->fetchColumn();
         } catch (PDOException $e) {
-            $this->_bd->rollback();
             error_log("Erreur lors de la mise à jour de la ligne de commande: " . $e->getMessage());
             return false;
         }
@@ -162,17 +144,16 @@ class OrderLineDAO
      */
     public function delete($id)
     {
-        $query = "DELETE FROM order_lines WHERE id = :id";
         try {
-            $this->_bd->beginTransaction();
+            // Utiliser la fonction PostgreSQL delete_order_line
+            $query = "SELECT delete_order_line(:id)";
+            
             $stmt = $this->_bd->prepare($query);
             $stmt->bindValue(':id', $id, PDO::PARAM_INT);
-            $result = $stmt->execute();
-            $this->_bd->commit();
+            $stmt->execute();
             
-            return $result;
+            return $stmt->fetchColumn();
         } catch (PDOException $e) {
-            $this->_bd->rollback();
             error_log("Erreur lors de la suppression de la ligne de commande: " . $e->getMessage());
             return false;
         }

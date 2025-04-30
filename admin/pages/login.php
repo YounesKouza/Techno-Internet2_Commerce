@@ -44,16 +44,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 if (password_verify($password, $user->mot_de_passe)) {
                     // Vérifier si l'utilisateur est admin
                     if ($user->role === 'admin') {
-                        // Connexion réussie - Création de la session
+                // Connexion réussie - Création de la session
                         $_SESSION['user_id'] = $user->id;
                         $_SESSION['username'] = $user->nom;
                         $_SESSION['email'] = $user->email;
                         $_SESSION['role'] = $user->role;
-                        
-                        // Redirection vers le tableau de bord
-                        header('Location: accueil_admin.php');
-                        exit;
-                    } else {
+                
+                // Redirection vers le tableau de bord
+                header('Location: accueil_admin.php');
+                exit;
+            } else {
                         $error = 'Vous n\'avez pas les droits d\'accès à l\'administration';
                         error_log("Accès refusé: l'utilisateur n'est pas admin");
                     }
@@ -85,44 +85,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     <!-- Font Awesome pour les icônes -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     
-    <style>
-        body {
-            height: 100vh;
-            display: flex;
-            align-items: center;
-            background-color: #f5f5f5;
-        }
-        
-        .form-signin {
-            max-width: 400px;
-            padding: 15px;
-        }
-        
-        .form-signin .form-floating:focus-within {
-            z-index: 2;
-        }
-        
-        .form-signin input[type="email"] {
-            margin-bottom: -1px;
-            border-bottom-right-radius: 0;
-            border-bottom-left-radius: 0;
-        }
-        
-        .form-signin input[type="password"] {
-            margin-bottom: 10px;
-            border-top-left-radius: 0;
-            border-top-right-radius: 0;
-        }
-        
-        .admin-header {
-            background-color: #343a40;
-            color: white;
-            padding: 20px;
-            border-radius: 5px 5px 0 0;
-        }
-    </style>
+    <!-- CSS personnalisé -->
+    <link rel="stylesheet" href="/Exos/Techno-internet2_commerce/admin/public/css/style.css">
 </head>
-<body class="text-center">
+<body class="login-page text-center">
     <main class="form-signin w-100 m-auto">
         <div class="card shadow-lg">
             <div class="admin-header">
@@ -158,7 +124,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         <p class="mt-3 text-muted">&copy; <?= date('Y') ?> Furniture Shop</p>
     </main>
     
-    <!-- Bootstrap JS Bundle with Popper -->
+    <!-- Bootstrap JavaScript Bundle with Popper -->
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+    
+    <!-- jQuery -->
+    <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+    
+    <!-- JavaScript principal -->
+    <script src="/Exos/Techno-internet2_commerce/admin/public/js/fonction.js"></script>
 </body>
 </html> 

@@ -87,20 +87,18 @@ class CategoryDAO
      */
     public function create(array $data)
     {
-        $query = "INSERT INTO categories (nom, description) VALUES (:nom, :description)";
         try {
-            $this->_bd->beginTransaction();
+            $query = "SELECT create_category(:nom, :description) AS category_id";
+            
             $stmt = $this->_bd->prepare($query);
             $stmt->bindValue(':nom', $data['nom']);
             $stmt->bindValue(':description', $data['description'] ?? null);
             
-            $result = $stmt->execute();
-            $id = $this->_bd->lastInsertId();
-            $this->_bd->commit();
+            $stmt->execute();
+            $result = $stmt->fetch(PDO::FETCH_ASSOC);
             
-            return $result ? $id : false;
+            return $result ? (int)$result['category_id'] : false;
         } catch (PDOException $e) {
-            $this->_bd->rollback();
             error_log("Erreur lors de la création de la catégorie: " . $e->getMessage());
             return false;
         }
@@ -108,55 +106,25 @@ class CategoryDAO
 
     /**
      * Met à jour une catégorie
-     * Cette méthode accepte soit un ID et un tableau de données, soit un tableau contenant l'ID.
-     * @param int|array $idOrData ID de la catégorie ou tableau contenant l'ID et les données
-     * @param array|null $data Données à mettre à jour (null si le premier paramètre est un tableau complet)
+     * @param int $id ID de la catégorie
+     * @param array $data Données à mettre à jour
      * @return bool Succès ou échec
      */
-    public function update($idOrData, array $data = null)
+    public function update($id, array $data)
     {
-        // Déterminer si on a reçu un ID + données ou juste un tableau avec ID inclus
-        if (is_array($idOrData) && isset($idOrData['id'])) {
-            $categoryData = $idOrData;
-            $id = $categoryData['id'];
-        } else {
-            $id = $idOrData;
-            $categoryData = $data;
-        }
-        
-        // Vérification si on a un ID et des données
-        if (empty($id) || !is_array($categoryData)) {
-            return false;
-        }
-
-        $fieldsToUpdate = [];
-        $params = [':id' => $id];
-
-        foreach ($categoryData as $key => $value) {
-            if ($key !== 'id') {
-                $fieldsToUpdate[] = "$key = :$key";
-                $params[":$key"] = $value;
-            }
-        }
-
-        if (empty($fieldsToUpdate)) {
-            return false;
-        }
-
-        $query = "UPDATE categories SET " . implode(', ', $fieldsToUpdate) . " WHERE id = :id";
-        
         try {
-            $this->_bd->beginTransaction();
-            $stmt = $this->_bd->prepare($query);
-            foreach ($params as $param => $val) {
-                $stmt->bindValue($param, $val);
-            }
-            $result = $stmt->execute();
-            $this->_bd->commit();
+            $query = "SELECT update_category(:id, :nom, :description) AS success";
             
-            return $result;
+            $stmt = $this->_bd->prepare($query);
+            $stmt->bindValue(':id', $id, PDO::PARAM_INT);
+            $stmt->bindValue(':nom', $data['nom']);
+            $stmt->bindValue(':description', $data['description'] ?? null);
+            
+            $stmt->execute();
+            $result = $stmt->fetch(PDO::FETCH_ASSOC);
+            
+            return $result && isset($result['success']) && $result['success'];
         } catch (PDOException $e) {
-            $this->_bd->rollback();
             error_log("Erreur lors de la mise à jour de la catégorie: " . $e->getMessage());
             return false;
         }
@@ -169,17 +137,17 @@ class CategoryDAO
      */
     public function delete($id)
     {
-        $query = "DELETE FROM categories WHERE id = :id";
         try {
-            $this->_bd->beginTransaction();
+            $query = "SELECT delete_category(:id) AS success";
+            
             $stmt = $this->_bd->prepare($query);
             $stmt->bindValue(':id', $id, PDO::PARAM_INT);
-            $result = $stmt->execute();
-            $this->_bd->commit();
             
-            return $result;
+            $stmt->execute();
+            $result = $stmt->fetch(PDO::FETCH_ASSOC);
+            
+            return $result && isset($result['success']) && $result['success'];
         } catch (PDOException $e) {
-            $this->_bd->rollback();
             error_log("Erreur lors de la suppression de la catégorie: " . $e->getMessage());
             return false;
         }

@@ -127,55 +127,75 @@ class OrderDAO
 
     /**
      * Met à jour le statut d'une commande
-     * @param int $id ID de la commande
+     * 
+     * @param int $id ID de la commande à mettre à jour
      * @param string $status Nouveau statut
-     * @return bool Succès ou échec
+     * @return bool Succès de l'opération
      */
-    public function updateStatus($id, $status)
+    public function updateStatus($id, $status) 
     {
-        $query = "UPDATE orders SET statut = :statut WHERE id = :id";
         try {
-            $this->_bd->beginTransaction();
-            $stmt = $this->_bd->prepare($query);
-            $stmt->bindValue(':id', $id, PDO::PARAM_INT);
-            $stmt->bindValue(':statut', $status);
-            $result = $stmt->execute();
-            $this->_bd->commit();
+            // Utiliser la fonction PL/pgSQL pour mettre à jour le statut de la commande
+            $query = "SELECT update_order_status(:order_id, :status) AS success";
             
-            return $result;
+            $stmt = $this->_bd->prepare($query);
+            $stmt->bindValue(':order_id', $id, PDO::PARAM_INT);
+            $stmt->bindValue(':status', $status);
+            
+            $stmt->execute();
+            $result = $stmt->fetch(PDO::FETCH_ASSOC);
+            
+            return $result && $result['success'];
         } catch (PDOException $e) {
-            $this->_bd->rollback();
-            error_log("Erreur lors de la mise à jour du statut de la commande: " . $e->getMessage());
+            error_log("Erreur lors de la mise à jour du statut de la commande #$id: " . $e->getMessage());
             return false;
         }
     }
 
     /**
-     * Crée une nouvelle commande dans la base de données
+     * Crée une nouvelle commande en base de données
+     * 
      * @param array $data Données de la commande
-     * @return int|false ID de la nouvelle commande ou false si échec
+     * @return int|false ID de la commande créée ou false en cas d'échec
      */
-    public function create(array $data)
+    public function create($data)
     {
         try {
-            $this->_bd->beginTransaction();
-            
-            // Structure simplifiée correspondant au schéma PostgreSQL
-            $query = "INSERT INTO orders (utilisateur_id, montant_total, statut) 
-                      VALUES (:utilisateur_id, :montant_total, :statut)";
+            // Utiliser la fonction PL/pgSQL pour créer une commande
+            $query = "SELECT create_order(
+                :utilisateur_id, 
+                :statut, 
+                :date_commande, 
+                :adresse_livraison, 
+                :ville_livraison, 
+                :code_postal_livraison, 
+                :pays_livraison, 
+                :telephone, 
+                :total,
+                :methode_paiement
+            ) AS order_id";
             
             $stmt = $this->_bd->prepare($query);
             $stmt->bindValue(':utilisateur_id', $data['utilisateur_id'], PDO::PARAM_INT);
-            $stmt->bindValue(':montant_total', $data['montant_total'], PDO::PARAM_STR);
             $stmt->bindValue(':statut', $data['statut'] ?? 'en attente');
+            $stmt->bindValue(':date_commande', $data['date_commande'] ?? date('Y-m-d H:i:s'));
+            $stmt->bindValue(':adresse_livraison', $data['adresse_livraison']);
+            $stmt->bindValue(':ville_livraison', $data['ville_livraison']);
+            $stmt->bindValue(':code_postal_livraison', $data['code_postal_livraison']);
+            $stmt->bindValue(':pays_livraison', $data['pays_livraison']);
+            $stmt->bindValue(':telephone', $data['telephone']);
+            $stmt->bindValue(':total', $data['total']);
+            $stmt->bindValue(':methode_paiement', $data['methode_paiement']);
             
             $stmt->execute();
-            $orderId = $this->_bd->lastInsertId();
+            $result = $stmt->fetch(PDO::FETCH_ASSOC);
             
-            $this->_bd->commit();
-            return $orderId;
+            if ($result && isset($result['order_id'])) {
+                return (int)$result['order_id'];
+            }
+            
+            return false;
         } catch (PDOException $e) {
-            $this->_bd->rollback();
             error_log("Erreur lors de la création de la commande: " . $e->getMessage());
             return false;
         }
@@ -239,7 +259,7 @@ class OrderDAO
             
             $orders = [];
             while ($data = $stmt->fetch(PDO::FETCH_ASSOC)) {
-                $orders[] = new Order($data, $this);
+                $orders[] = new Order($data);
             }
             
             return $orders;
@@ -542,27 +562,15 @@ class OrderDAO
     public function deleteWithDependencies($id)
     {
         try {
-            $this->_bd->beginTransaction();
-            
-            // Suppression des lignes de commande
-            $stmt = $this->_bd->prepare("DELETE FROM order_lines WHERE order_id = :id");
+            // Utiliser la fonction PL/pgSQL pour supprimer la commande et ses dépendances
+            $query = "SELECT delete_with_dependencies(:id) AS success";
+            $stmt = $this->_bd->prepare($query);
             $stmt->bindValue(':id', $id, PDO::PARAM_INT);
             $stmt->execute();
             
-            // Suppression des paiements
-            $stmt = $this->_bd->prepare("DELETE FROM payments WHERE order_id = :id");
-            $stmt->bindValue(':id', $id, PDO::PARAM_INT);
-            $stmt->execute();
-            
-            // Suppression de la commande
-            $stmt = $this->_bd->prepare("DELETE FROM orders WHERE id = :id");
-            $stmt->bindValue(':id', $id, PDO::PARAM_INT);
-            $stmt->execute();
-            
-            $this->_bd->commit();
-            return true;
+            $result = $stmt->fetch(PDO::FETCH_ASSOC);
+            return isset($result['success']) && $result['success'];
         } catch (PDOException $e) {
-            $this->_bd->rollBack();
             error_log("Erreur lors de la suppression de la commande #$id et ses dépendances: " . $e->getMessage());
             return false;
         }
@@ -594,35 +602,16 @@ class OrderDAO
     public function deleteAllByUserId($userId)
     {
         try {
-            $this->_bd->beginTransaction();
-            
-            // Récupération des commandes de l'utilisateur
-            $stmt = $this->_bd->prepare("SELECT id FROM orders WHERE utilisateur_id = :utilisateur_id");
-            $stmt->bindValue(':utilisateur_id', $userId, PDO::PARAM_INT);
-            $stmt->execute();
-            $order_ids = $stmt->fetchAll(PDO::FETCH_COLUMN);
-            
-            // Suppression des lignes de commande pour chaque commande
-            foreach ($order_ids as $order_id) {
-                $stmt = $this->_bd->prepare("DELETE FROM order_lines WHERE order_id = :order_id");
-                $stmt->bindValue(':order_id', $order_id, PDO::PARAM_INT);
-                $stmt->execute();
-                
-                // Suppression des paiements
-                $stmt = $this->_bd->prepare("DELETE FROM payments WHERE order_id = :order_id");
-                $stmt->bindValue(':order_id', $order_id, PDO::PARAM_INT);
-                $stmt->execute();
-            }
-            
-            // Suppression des commandes
-            $stmt = $this->_bd->prepare("DELETE FROM orders WHERE utilisateur_id = :utilisateur_id");
+            // Utiliser la fonction PL/pgSQL pour supprimer toutes les commandes d'un utilisateur
+            $query = "SELECT delete_all_by_user_id(:utilisateur_id) AS deleted_count";
+            $stmt = $this->_bd->prepare($query);
             $stmt->bindValue(':utilisateur_id', $userId, PDO::PARAM_INT);
             $stmt->execute();
             
-            $this->_bd->commit();
+            $result = $stmt->fetch(PDO::FETCH_ASSOC);
+            // Si au moins une commande a été supprimée ou si l'utilisateur n'avait pas de commandes
             return true;
         } catch (PDOException $e) {
-            $this->_bd->rollBack();
             error_log("Erreur lors de la suppression des commandes de l'utilisateur #$userId: " . $e->getMessage());
             return false;
         }
@@ -823,91 +812,83 @@ class OrderDAO
     }
     
     /**
-     * Traite une commande complète
+     * Traite une commande en créant l'ordre et en mettant à jour les stocks
      * @param array $orderData Données de la commande
-     * @param array $items Articles du panier
-     * @param object $user Utilisateur
-     * @return array Résultat du traitement
+     * @param array $cartItems Articles du panier
+     * @param array $paymentData Données de paiement
+     * @return int|false ID de la commande créée ou false si échec
      */
-    public function processOrder($orderData, $items, $user)
+    public function processOrder($orderData, $cartItems, $paymentData)
     {
         try {
+            // Journalisation détaillée des données
+            error_log("OrderDAO::processOrder - Données commande: " . json_encode($orderData));
+            error_log("OrderDAO::processOrder - Articles panier: " . json_encode($cartItems));
+            
+            // Vérifier si les éléments requis sont présents
+            if (empty($orderData['utilisateur_id']) || !isset($orderData['montant_total'])) {
+                error_log("OrderDAO::processOrder - Données de commande incomplètes");
+                return false;
+            }
+            
+            if (empty($cartItems)) {
+                error_log("OrderDAO::processOrder - Le panier est vide");
+                return false;
+            }
+            
+            // Démarrer une transaction
             $this->_bd->beginTransaction();
             
-            // Journaliser les données pour le débogage
-            error_log("Début du traitement de la commande avec les données: " . json_encode($orderData));
-            
-            // Verifier que les données nécessaires sont présentes
-            if (empty($orderData['utilisateur_id']) || empty($orderData['montant_total'])) {
-                throw new Exception("Données de commande incomplètes");
-            }
-            
-            // S'assurer que le panier n'est pas vide
-            if (empty($items)) {
-                throw new Exception("Le panier est vide, impossible de créer une commande");
-            }
-            
-            // Créer la commande
-            $query = "INSERT INTO orders (utilisateur_id, montant_total, statut) 
-                      VALUES (:utilisateur_id, :montant_total, :statut) RETURNING id";
-            
-            $stmt = $this->_bd->prepare($query);
-            $stmt->bindValue(':utilisateur_id', $orderData['utilisateur_id'], PDO::PARAM_INT);
-            $stmt->bindValue(':montant_total', $orderData['montant_total'], PDO::PARAM_STR);
-            $stmt->bindValue(':statut', $orderData['statut']);
-            
-            $stmt->execute();
-            $result = $stmt->fetch(PDO::FETCH_ASSOC);
-            
-            if (!$result || !isset($result['id'])) {
-                throw new Exception("Erreur lors de la création de la commande");
-            }
-            
-            $orderId = $result['id'];
-            error_log("Commande créée avec l'ID: " . $orderId);
-            
-            // Ajouter les articles à la commande
-            foreach ($items as $item) {
-                $queryDetails = "INSERT INTO order_lines (order_id, produit_id, quantite, prix_unitaire) 
-                               VALUES (:order_id, :produit_id, :quantite, :prix_unitaire)";
+            try {
+                // Créer la commande en utilisant la fonction create_order existante
+                $query = "SELECT create_order(:utilisateur_id, :montant_total, :statut) AS order_id";
                 
-                $stmtDetails = $this->_bd->prepare($queryDetails);
-                $stmtDetails->bindValue(':order_id', $orderId, PDO::PARAM_INT);
-                $stmtDetails->bindValue(':produit_id', $item['id'], PDO::PARAM_INT);
-                $stmtDetails->bindValue(':quantite', $item['quantity'], PDO::PARAM_INT);
-                $stmtDetails->bindValue(':prix_unitaire', $item['prix'], PDO::PARAM_STR);
+                $stmt = $this->_bd->prepare($query);
+                $stmt->bindValue(':utilisateur_id', $orderData['utilisateur_id'], PDO::PARAM_INT);
+                $stmt->bindValue(':montant_total', $orderData['montant_total'], PDO::PARAM_STR);
+                $stmt->bindValue(':statut', $orderData['statut'], PDO::PARAM_STR);
                 
-                if (!$stmtDetails->execute()) {
-                    throw new Exception("Erreur lors de l'ajout des détails de la commande");
+                $stmt->execute();
+                $result = $stmt->fetch(PDO::FETCH_ASSOC);
+                
+                if (!$result || !isset($result['order_id'])) {
+                    throw new Exception("Échec de la création de la commande");
                 }
                 
-                // Mettre à jour le stock du produit
-                $queryStock = "UPDATE products SET stock = stock - :quantite WHERE id = :produit_id";
-                $stmtStock = $this->_bd->prepare($queryStock);
-                $stmtStock->bindValue(':quantite', $item['quantity'], PDO::PARAM_INT);
-                $stmtStock->bindValue(':produit_id', $item['id'], PDO::PARAM_INT);
+                $orderId = (int)$result['order_id'];
+                error_log("OrderDAO::processOrder - Commande créée avec l'ID: " . $orderId);
                 
-                if (!$stmtStock->execute()) {
-                    throw new Exception("Erreur lors de la mise à jour du stock");
+                // Ajouter chaque article au panier en utilisant add_order_line
+                foreach ($cartItems as $item) {
+                    $query = "SELECT add_order_line(:order_id, :produit_id, :quantite, :prix_unitaire)";
+                    
+                    $stmt = $this->_bd->prepare($query);
+                    $stmt->bindValue(':order_id', $orderId, PDO::PARAM_INT);
+                    $stmt->bindValue(':produit_id', $item['id'], PDO::PARAM_INT);
+                    $stmt->bindValue(':quantite', $item['quantity'], PDO::PARAM_INT);
+                    $stmt->bindValue(':prix_unitaire', $item['prix'], PDO::PARAM_STR);
+                    
+                    $success = $stmt->execute();
+                    if (!$success) {
+                        throw new Exception("Échec de l'ajout de l'article " . $item['id'] . " à la commande");
+                    }
                 }
+                
+                // Si tout s'est bien passé, valider la transaction
+                $this->_bd->commit();
+                return $orderId;
+                
+            } catch (Exception $e) {
+                // En cas d'erreur, annuler la transaction
+                $this->_bd->rollBack();
+                error_log("OrderDAO::processOrder - Erreur de transaction: " . $e->getMessage());
+                return false;
             }
-            
-            $this->_bd->commit();
-            
-            return [
-                'success' => true,
-                'order_id' => $orderId,
-                'message' => 'Commande créée avec succès'
-            ];
             
         } catch (Exception $e) {
-            $this->_bd->rollback();
-            error_log("Erreur lors du traitement de la commande: " . $e->getMessage());
-            
-            return [
-                'success' => false,
-                'message' => $e->getMessage()
-            ];
+            error_log("OrderDAO::processOrder - Exception: " . $e->getMessage());
+            error_log("OrderDAO::processOrder - Trace: " . $e->getTraceAsString());
+            return false;
         }
     }
 }

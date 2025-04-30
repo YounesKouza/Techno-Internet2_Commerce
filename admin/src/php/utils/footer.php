@@ -117,6 +117,9 @@ function generate_footer($scripts = []) {
     <!-- jQuery -->
     <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
     
+    <!-- Script principal JS -->
+    <script src="admin/public/js/fonction.js"></script>
+    
     <?php foreach ($scripts as $script): ?>
     <script src="<?= $script ?>"></script>
     <?php endforeach; ?>

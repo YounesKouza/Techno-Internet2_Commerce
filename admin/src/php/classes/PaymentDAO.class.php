@@ -35,28 +35,29 @@ class PaymentDAO
     /**
      * Crée un nouveau paiement
      * @param array $data Données du paiement
-     * @return int|false ID du nouveau paiement ou false si échec
+     * @return int|false ID du paiement créé ou false en cas d'échec
      */
     public function create(array $data)
     {
-        $query = "INSERT INTO payments (order_id, mode_paiement, reference_transaction, statut) 
-                  VALUES (:order_id, :mode_paiement, :reference_transaction, :statut)";
-        
         try {
-            $this->_bd->beginTransaction();
+            // Utiliser la fonction PostgreSQL create_payment
+            $query = "SELECT create_payment(:order_id, :mode, :reference, :statut)";
+            
             $stmt = $this->_bd->prepare($query);
             $stmt->bindValue(':order_id', $data['order_id'], PDO::PARAM_INT);
-            $stmt->bindValue(':mode_paiement', $data['mode_paiement']);
-            $stmt->bindValue(':reference_transaction', $data['reference_transaction'] ?? null);
-            $stmt->bindValue(':statut', $data['statut'] ?? 'en attente');
+            $stmt->bindValue(':mode', $data['mode']);
+            $stmt->bindValue(':reference', $data['reference'] ?? null);
+            $stmt->bindValue(':statut', $data['statut'] ?? 'en_attente');
             
-            $result = $stmt->execute();
-            $id = $this->_bd->lastInsertId();
-            $this->_bd->commit();
+            $stmt->execute();
+            $result = $stmt->fetch(PDO::FETCH_ASSOC);
             
-            return $result ? $id : false;
-        } catch (PDOException $e) {
-            $this->_bd->rollback();
+            if ($result && isset($result['create_payment'])) {
+                return $result['create_payment'];
+            }
+            
+            return false;
+        } catch (Exception $e) {
             error_log("Erreur lors de la création du paiement: " . $e->getMessage());
             return false;
         }
@@ -64,24 +65,21 @@ class PaymentDAO
 
     /**
      * Met à jour le statut d'un paiement
-     * @param int $id ID du paiement
+     * 
+     * @param int $id Identifiant du paiement
      * @param string $status Nouveau statut
-     * @return bool Succès ou échec
+     * @return bool True si la mise à jour a réussi, false sinon
      */
-    public function updateStatus($id, $status)
-    {
-        $query = "UPDATE payments SET statut = :statut WHERE id = :id";
+    public function updateStatus($id, $status) {
         try {
-            $this->_bd->beginTransaction();
-            $stmt = $this->_bd->prepare($query);
-            $stmt->bindValue(':id', $id, PDO::PARAM_INT);
-            $stmt->bindValue(':statut', $status);
-            $result = $stmt->execute();
-            $this->_bd->commit();
+            $sql = "SELECT update_payment_status(:id, :status)";
+            $stmt = $this->_bd->prepare($sql);
+            $stmt->bindParam(':id', $id, PDO::PARAM_INT);
+            $stmt->bindParam(':status', $status, PDO::PARAM_STR);
+            $stmt->execute();
             
-            return $result;
-        } catch (PDOException $e) {
-            $this->_bd->rollback();
+            return $stmt->fetchColumn();
+        } catch (Exception $e) {
             error_log("Erreur lors de la mise à jour du statut du paiement: " . $e->getMessage());
             return false;
         }
@@ -148,20 +146,23 @@ class PaymentDAO
     }
 
     /**
-     * Met à jour le statut de tous les paiements associés à une commande
-     * @param int $orderId ID de la commande
+     * Met à jour le statut des paiements associés à une commande
+     * 
+     * @param int $orderId Identifiant de la commande
      * @param string $status Nouveau statut
-     * @return bool True si succès, false sinon
+     * @return bool True si la mise à jour a réussi, false sinon
      */
-    public function updateStatusByOrderId($orderId, $status)
-    {
+    public function updateStatusByOrderId($orderId, $status) {
         try {
-            $stmt = $this->_bd->prepare("UPDATE payments SET statut = :status WHERE order_id = :order_id");
-            $stmt->bindValue(':status', $status);
-            $stmt->bindValue(':order_id', $orderId, PDO::PARAM_INT);
-            return $stmt->execute();
-        } catch (PDOException $e) {
-            error_log("Erreur lors de la mise à jour du statut des paiements pour la commande #$orderId: " . $e->getMessage());
+            $sql = "SELECT update_payment_status_by_order_id(:orderId, :status)";
+            $stmt = $this->_bd->prepare($sql);
+            $stmt->bindParam(':orderId', $orderId, PDO::PARAM_INT);
+            $stmt->bindParam(':status', $status, PDO::PARAM_STR);
+            $stmt->execute();
+            
+            return $stmt->fetchColumn();
+        } catch (Exception $e) {
+            error_log("Erreur lors de la mise à jour du statut des paiements pour la commande: " . $e->getMessage());
             return false;
         }
     }

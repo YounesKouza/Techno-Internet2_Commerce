@@ -25,6 +25,12 @@ $success = "";
 $user_detail = null;
 $user_orders = [];
 
+// Récupération du message de succès en session, s'il existe
+if (isset($_SESSION['success_message'])) {
+    $success = $_SESSION['success_message'];
+    unset($_SESSION['success_message']); // Supprimer le message pour qu'il ne s'affiche qu'une fois
+}
+
 // Initialisation des DAO
 $userDAO = new UserDAO($pdo);
 $orderDAO = new OrderDAO($pdo);
@@ -112,15 +118,16 @@ if (isset($_GET['action']) && isset($_GET['user_id'])) {
                                     'nom' => $nom,
                                     'email' => $email,
                                     'telephone' => $telephone,
-                                    'adresse' => $adresse
+                                    'adresse' => $adresse,
+                                    'role' => $user['role']
                                 ];
                                 
-                                $userDAO->update($userData);
+                                $userDAO->update($user_id, $userData);
                                 
-                                // Récupération des données mises à jour
-                                $user_detail = $userDAO->findById($user_id);
-                                
-                                $success = "Les informations du client ont été mises à jour avec succès";
+                                // Redirection vers la page de détails du client après modification réussie
+                                $_SESSION['success_message'] = "Les informations du client ont été mises à jour avec succès";
+                                header('Location: gestion_clients.php?action=view&user_id=' . $user_id);
+                                exit;
                             }
                         }
                     } else {
@@ -246,7 +253,8 @@ if (isset($_GET['action']) && isset($_GET['user_id'])) {
                                     </div>
                                     <div class="card-body">
                                         <div class="d-flex align-items-center mb-3">
-                                            <div class="bg-light rounded-circle d-flex align-items-center justify-content-center me-3" style="width: 80px; height: 80px;">
+                                            <!-- Avatar / Image de profil -->
+                                            <div class="avatar-placeholder-large me-3">
                                                 <i class="fas fa-user-circle fa-3x text-secondary"></i>
                                             </div>
                                             <div>
@@ -500,5 +508,8 @@ if (isset($_GET['action']) && isset($_GET['user_id'])) {
     
     <!-- jQuery -->
     <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+    
+    <!-- JavaScript principal -->
+    <script src="/Exos/Techno-internet2_commerce/admin/public/js/fonction.js"></script>
 </body>
 </html>

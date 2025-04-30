@@ -33,7 +33,10 @@ require_once __DIR__ . '/../classes/Payment.class.php';
 
 // Inclure les utilitaires
 require_once __DIR__ . '/connexion.php';
+require_once __DIR__ . '/functions.php';
+require_once __DIR__ . '/header.php';
 require_once __DIR__ . '/session.php';
+require_once __DIR__ . '/sidebar.php';
 
 /**
  * Détermine si la page en cours fait partie de l'interface d'administration
@@ -46,20 +49,13 @@ function is_admin_interface() {
 }
 
 /**
- * Fonction pour ajouter la classe admin-interface au body
- * Cette fonction est appelée dans le header.php
+ * Ajoute automatiquement la classe 'admin-interface' au body lorsqu'on est dans l'interface admin
+ * Cette fonction est utilisée dans le header pour appliquer les styles spécifiques à l'admin
+ * Note: La fonctionnalité JavaScript a été déplacée vers fonction.js
  */
 function add_body_class() {
-    // Déterminer si nous sommes dans l'interface admin
-    $current_path = $_SERVER['SCRIPT_NAME'] ?? '';
-    
-    // Si le chemin contient /admin/, c'est une page d'administration
-    if (strpos($current_path, '/admin/') !== false) {
-        echo '<script>
-        document.addEventListener("DOMContentLoaded", function() { 
-            document.body.classList.add("admin-interface");
-            console.log("Added admin-interface class to body");
-        });
-        </script>';
-    }
+    // Cette fonction est conservée pour compatibilité, mais le JavaScript
+    // a été déplacé dans fonction.js et n'est plus injecté ici
+    // Pour assurer la compatibilité avec le code existant
+    return;
 }

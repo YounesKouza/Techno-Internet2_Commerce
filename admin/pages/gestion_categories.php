@@ -57,10 +57,10 @@ if (isset($_GET['action'])) {
                             $result = $categoryDAO->create($categoryData);
                             
                             if ($result) {
-                                $success = "La catégorie a été ajoutée avec succès";
-                                // Réinitialisation du formulaire
-                                $nom = '';
-                                $description = '';
+                            $success = "La catégorie a été ajoutée avec succès";
+                            // Réinitialisation du formulaire
+                            $nom = '';
+                            $description = '';
                             } else {
                                 $error = "Erreur lors de l'ajout de la catégorie";
                             }
@@ -98,23 +98,19 @@ if (isset($_GET['action'])) {
                             if ($categoryDAO->categoryExistsByNameExcept($nom, $category_id)) {
                                 $error = "Une autre catégorie avec ce nom existe déjà";
                             } else {
-                                // Mise à jour de la catégorie via le DAO
-                                $categoryData = [
-                                    'id' => $category_id,
+                                // Mise à jour de la catégorie en base de données
+                                $category_data = [
                                     'nom' => $nom,
                                     'description' => $description
                                 ];
-                                $result = $categoryDAO->update($categoryData);
                                 
-                                if ($result) {
-                                    $success = "La catégorie a été mise à jour avec succès";
-                                    // Récupération de la catégorie mise à jour
-                                    $category = $categoryDAO->findById($category_id);
-                                    // Assigner la catégorie mise à jour à $category_detail pour le formulaire
-                                    $category_detail = $category;
-                                } else {
-                                    $error = "Erreur lors de la mise à jour de la catégorie";
-                                }
+                                $categoryDAO->update($category_id, $category_data);
+                                
+                                $success = "La catégorie a été modifiée avec succès.";
+                                // Récupération de la catégorie mise à jour
+                                $category = $categoryDAO->findById($category_id);
+                                // Assigner la catégorie mise à jour à $category_detail pour le formulaire
+                                $category_detail = $category;
                             }
                         }
                     } else {
@@ -149,7 +145,7 @@ if (isset($_GET['action'])) {
                         $result = $categoryDAO->delete($category_id);
                         
                         if ($result) {
-                            $success = "La catégorie a été supprimée avec succès" . ($product_count > 0 ? " ($product_count produits ont été mis à jour)" : "");
+                        $success = "La catégorie a été supprimée avec succès" . ($product_count > 0 ? " ($product_count produits ont été mis à jour)" : "");
                         } else {
                             $error = "Erreur lors de la suppression de la catégorie";
                         }
@@ -186,6 +182,11 @@ try {
     
     <!-- CSS personnalisé -->
     <link rel="stylesheet" href="/Exos/Techno-internet2_commerce/admin/public/css/style.css">
+    
+    <?php 
+    // Appel à la fonction add_body_class pour ajouter automatiquement la classe admin-interface si nécessaire
+    add_body_class();
+    ?>
 </head>
 <body class="admin-interface">
     <div class="container-fluid">
@@ -370,5 +371,8 @@ try {
     
     <!-- jQuery -->
     <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+    
+    <!-- JavaScript principal -->
+    <script src="/Exos/Techno-internet2_commerce/admin/public/js/fonction.js"></script>
 </body>
 </html>

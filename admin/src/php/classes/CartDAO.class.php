@@ -151,7 +151,8 @@ class CartDAO
                         'prix' => $product->prix,
                         'image' => $product->image_principale,
                         'quantity' => $quantity,
-                        'subtotal' => $subtotal
+                        'subtotal' => $subtotal,
+                        'stock' => $product->stock
                     ];
                 }
             }

@@ -77,129 +77,86 @@ class UserDAO
      */
     public function create(array $data)
     {
-        // Hasher le mot de passe
-        if (isset($data['mot_de_passe'])) {
-            $data['mot_de_passe'] = password_hash($data['mot_de_passe'], PASSWORD_DEFAULT);
+        if (!isset($data['email']) || !filter_var($data['email'], FILTER_VALIDATE_EMAIL)) {
+            return false;
         }
 
-        $query = "INSERT INTO users (nom, email, mot_de_passe, role, adresse, telephone) 
-                  VALUES (:nom, :email, :mot_de_passe, :role, :adresse, :telephone)";
-        
+        // Vérifier si l'email existe déjà
+        if ($this->findByEmail($data['email'])) {
+            return false;
+        }
+
         try {
-            $this->_bd->beginTransaction();
+            // Hachage du mot de passe s'il est fourni
+            if (isset($data['mot_de_passe']) && !empty($data['mot_de_passe'])) {
+                $data['mot_de_passe'] = password_hash($data['mot_de_passe'], PASSWORD_DEFAULT);
+            }
+
+            // Utiliser la fonction PostgreSQL create_user
+            $query = "SELECT create_user(:nom, :email, :mot_de_passe, :role, :adresse, :telephone) AS user_id";
+            
             $stmt = $this->_bd->prepare($query);
-            $stmt->bindValue(':nom', $data['nom']);
-            $stmt->bindValue(':email', $data['email']);
-            $stmt->bindValue(':mot_de_passe', $data['mot_de_passe']);
-            $stmt->bindValue(':role', $data['role'] ?? 'client');
-            $stmt->bindValue(':adresse', $data['adresse'] ?? null);
-            $stmt->bindValue(':telephone', $data['telephone'] ?? null);
+            $stmt->bindValue(':nom', $data['nom'] ?? null, PDO::PARAM_STR);
+            $stmt->bindValue(':email', $data['email'], PDO::PARAM_STR);
+            $stmt->bindValue(':mot_de_passe', $data['mot_de_passe'] ?? null, PDO::PARAM_STR);
+            $stmt->bindValue(':role', $data['role'] ?? 'client', PDO::PARAM_STR);
+            $stmt->bindValue(':adresse', $data['adresse'] ?? null, PDO::PARAM_STR);
+            $stmt->bindValue(':telephone', $data['telephone'] ?? null, PDO::PARAM_STR);
             
-            $result = $stmt->execute();
-            $id = $this->_bd->lastInsertId();
-            $this->_bd->commit();
+            $stmt->execute();
+            $result = $stmt->fetch(PDO::FETCH_ASSOC);
             
-            return $result ? $id : false;
+            return $result && isset($result['user_id']) ? (int)$result['user_id'] : false;
         } catch (PDOException $e) {
-            $this->_bd->rollback();
             error_log("Erreur lors de la création de l'utilisateur: " . $e->getMessage());
             return false;
         }
     }
 
     /**
-     * Met à jour un utilisateur
-     * Cette méthode peut recevoir soit un ID et un tableau de données, soit un tableau contenant l'ID.
-     * @param int|array $idOrData ID de l'utilisateur ou tableau contenant l'ID et les données
-     * @param array|null $data Données à mettre à jour (peut être null si le premier paramètre est un tableau complet)
+     * Met à jour un utilisateur existant
+     * @param int $userId ID de l'utilisateur à mettre à jour
+     * @param array $data Nouvelles données
      * @return bool Succès ou échec
      */
-    public function update($idOrData, array $data = null)
+    public function update($userId, array $data)
     {
-        // Déterminer si on a reçu un ID + données ou juste un tableau avec ID inclus
-        if (is_array($idOrData) && isset($idOrData['id'])) {
-            $userData = $idOrData;
-            $id = $userData['id'];
-        } else {
-            $id = $idOrData;
-            $userData = $data;
-        }
-        
-        // Vérification si on a un ID et des données
-        if (empty($id) || !is_array($userData)) {
+        if (!is_numeric($userId) || $userId <= 0) {
+            error_log("UserDAO::update - ID utilisateur invalide: " . $userId);
             return false;
         }
-        
-        // Cas simple: mise à jour du téléphone uniquement (utilisé dans commande.php)
-        if (isset($userData['telephone']) && count($userData) == 2) {
-            $query = "UPDATE users SET telephone = :telephone WHERE id = :id";
-            try {
-                $stmt = $this->_bd->prepare($query);
-                $stmt->bindValue(':id', $id, PDO::PARAM_INT);
-                $stmt->bindValue(':telephone', $userData['telephone']);
-                return $stmt->execute();
-            } catch (PDOException $e) {
-                error_log("Erreur lors de la mise à jour du téléphone: " . $e->getMessage());
-                return false;
-            }
-        }
-        
-        // Préparation de la requête dynamique
-        if (isset($userData['telephone']) || isset($userData['adresse'])) {
-            // Version simplifiée pour les mises à jour partielles (formulaire d'édition de profil)
-            $query = "UPDATE users SET 
-                        nom = :nom, 
-                        email = :email, 
-                        telephone = :telephone, 
-                        adresse = :adresse
-                      WHERE id = :id";
-                      
-            try {
-                $stmt = $this->_bd->prepare($query);
-                $stmt->bindValue(':id', $id, PDO::PARAM_INT);
-                $stmt->bindValue(':nom', $userData['nom']);
-                $stmt->bindValue(':email', $userData['email']);
-                $stmt->bindValue(':telephone', $userData['telephone'] ?? '');
-                $stmt->bindValue(':adresse', $userData['adresse'] ?? '');
-                
-                return $stmt->execute();
-            } catch (PDOException $e) {
-                error_log("Erreur lors de la mise à jour de l'utilisateur: " . $e->getMessage());
-                return false;
-            }
-        } else {
-            // Version complète pour les mises à jour administratives (avec tous les champs potentiels)
-            $fieldsToUpdate = [];
-            $params = [':id' => $id];
 
-            foreach ($userData as $key => $value) {
-                if ($key !== 'id' && $key !== 'date_inscription') {
-                    $fieldsToUpdate[] = "$key = :$key";
-                    $params[":$key"] = $value;
-                }
+        try {
+            // Hachage du mot de passe si fourni et non vide
+            if (isset($data['mot_de_passe']) && !empty($data['mot_de_passe'])) {
+                $data['mot_de_passe'] = password_hash($data['mot_de_passe'], PASSWORD_DEFAULT);
             }
 
-            if (empty($fieldsToUpdate)) {
-                return false;
-            }
+            // Log des données pour debug
+            error_log("UserDAO::update - Données reçues: " . json_encode($data));
 
-            $query = "UPDATE users SET " . implode(', ', $fieldsToUpdate) . " WHERE id = :id";
+            // Utiliser la fonction PostgreSQL update_user
+            $query = "SELECT update_user(:id, :nom, :email, :role, :adresse, :telephone) AS success";
             
-            try {
-                $this->_bd->beginTransaction();
-                $stmt = $this->_bd->prepare($query);
-                foreach ($params as $param => $val) {
-                    $stmt->bindValue($param, $val);
-                }
-                $result = $stmt->execute();
-                $this->_bd->commit();
-                
-                return $result;
-            } catch (PDOException $e) {
-                $this->_bd->rollback();
-                error_log("Erreur lors de la mise à jour de l'utilisateur: " . $e->getMessage());
-                return false;
+            $stmt = $this->_bd->prepare($query);
+            $stmt->bindValue(':id', $userId, PDO::PARAM_INT);
+            $stmt->bindValue(':nom', $data['nom'] ?? null, PDO::PARAM_STR);
+            $stmt->bindValue(':email', $data['email'] ?? null, PDO::PARAM_STR);
+            $stmt->bindValue(':role', $data['role'] ?? 'client', PDO::PARAM_STR); // Valeur par défaut 'client'
+            $stmt->bindValue(':adresse', $data['adresse'] ?? null, PDO::PARAM_STR);
+            $stmt->bindValue(':telephone', $data['telephone'] ?? null, PDO::PARAM_STR);
+            
+            $stmt->execute();
+            $result = $stmt->fetch(PDO::FETCH_ASSOC);
+            
+            if (!($result && isset($result['success']) && $result['success'])) {
+                error_log("UserDAO::update - Échec de la mise à jour: " . json_encode($result));
             }
+            
+            return $result && isset($result['success']) ? (bool)$result['success'] : false;
+        } catch (PDOException $e) {
+            error_log("Erreur lors de la mise à jour de l'utilisateur: " . $e->getMessage());
+            return false;
         }
     }
 
@@ -210,10 +167,18 @@ class UserDAO
      */
     public function countByRole($role)
     {
-        $query = "SELECT COUNT(*) as count FROM users WHERE role = :role";
+        // Si on compte les clients, inclure 'client' et 'user'
+        if ($role === 'client') {
+            $query = "SELECT COUNT(*) as count FROM users WHERE role IN ('client', 'user')";
+        } else {
+            $query = "SELECT COUNT(*) as count FROM users WHERE role = :role";
+        }
+        
         try {
             $stmt = $this->_bd->prepare($query);
-            $stmt->bindValue(':role', $role);
+            if ($role !== 'client') {
+                $stmt->bindValue(':role', $role);
+            }
             $stmt->execute();
             
             $result = $stmt->fetch(PDO::FETCH_ASSOC);
@@ -232,10 +197,18 @@ class UserDAO
      */
     public function findRecentByRole($role, $limit)
     {
-        $query = "SELECT * FROM users WHERE role = :role ORDER BY date_inscription DESC LIMIT :limit";
+        // Si on cherche les clients, inclure à la fois 'client' et 'user'
+        if ($role === 'client') {
+            $query = "SELECT * FROM users WHERE role IN ('client', 'user') ORDER BY date_inscription DESC LIMIT :limit";
+        } else {
+            $query = "SELECT * FROM users WHERE role = :role ORDER BY date_inscription DESC LIMIT :limit";
+        }
+        
         try {
             $stmt = $this->_bd->prepare($query);
-            $stmt->bindValue(':role', $role);
+            if ($role !== 'client') {
+                $stmt->bindValue(':role', $role);
+            }
             $stmt->bindValue(':limit', $limit, PDO::PARAM_INT);
             $stmt->execute();
             
@@ -295,38 +268,15 @@ class UserDAO
     public function delete($id)
     {
         try {
-            $this->_bd->beginTransaction();
-            
-            // Log de l'action pour le débogage
-            error_log("Tentative de suppression de l'utilisateur ID: $id");
-            
-            // Avant la suppression, vérifier si l'utilisateur existe
-            $stmt = $this->_bd->prepare("SELECT id FROM users WHERE id = :id");
+            // Utiliser la fonction PL/pgSQL pour supprimer l'utilisateur
+            $query = "SELECT delete_user(:id) AS success";
+            $stmt = $this->_bd->prepare($query);
             $stmt->bindValue(':id', $id, PDO::PARAM_INT);
             $stmt->execute();
             
-            if (!$stmt->fetch()) {
-                error_log("Utilisateur ID: $id introuvable");
-                return false;
-            }
-            
-            // Suppression de l'utilisateur - les contraintes ON DELETE CASCADE
-            // dans la base de données devraient gérer la suppression des commandes
-            $query = "DELETE FROM users WHERE id = :id";
-            $stmt = $this->_bd->prepare($query);
-            $stmt->bindValue(':id', $id, PDO::PARAM_INT);
-            $result = $stmt->execute();
-            
-            if (!$result) {
-                throw new PDOException("Échec de la suppression de l'utilisateur");
-            }
-            
-            $this->_bd->commit();
-            error_log("Utilisateur ID: $id supprimé avec succès");
-            
-            return true;
+            $result = $stmt->fetch(PDO::FETCH_ASSOC);
+            return isset($result['success']) && $result['success'];
         } catch (PDOException $e) {
-            $this->_bd->rollback();
             error_log("Erreur lors de la suppression de l'utilisateur ID: $id: " . $e->getMessage());
             return false;
         }
@@ -383,8 +333,14 @@ class UserDAO
      */
     public function findByRoleWithFilters($role, $search = '', $limit = 10, $offset = 0)
     {
-        $query = "SELECT * FROM users WHERE role = :role";
-        $params = [':role' => $role];
+        // Si on cherche les clients, inclure à la fois 'client' et 'user'
+        if ($role === 'client') {
+            $query = "SELECT * FROM users WHERE role IN ('client', 'user')";
+            $params = [];
+        } else {
+            $query = "SELECT * FROM users WHERE role = :role";
+            $params = [':role' => $role];
+        }
         
         if (!empty($search)) {
             $query .= " AND (nom ILIKE :search OR email ILIKE :search OR telephone ILIKE :search)";
@@ -423,8 +379,14 @@ class UserDAO
      */
     public function countByRoleWithFilters($role, $search = '')
     {
-        $query = "SELECT COUNT(*) as count FROM users WHERE role = :role";
-        $params = [':role' => $role];
+        // Si on compte les clients, inclure 'client' et 'user'
+        if ($role === 'client') {
+            $query = "SELECT COUNT(*) as count FROM users WHERE role IN ('client', 'user')";
+            $params = [];
+        } else {
+            $query = "SELECT COUNT(*) as count FROM users WHERE role = :role";
+            $params = [':role' => $role];
+        }
         
         if (!empty($search)) {
             $query .= " AND (nom ILIKE :search OR email ILIKE :search OR telephone ILIKE :search)";
@@ -457,9 +419,15 @@ class UserDAO
     public function findByIdAndRole($id, $role)
     {
         try {
-            $stmt = $this->_bd->prepare("SELECT * FROM users WHERE id = :id AND role = :role");
-            $stmt->bindValue(':id', $id, PDO::PARAM_INT);
-            $stmt->bindValue(':role', $role);
+            // Si on cherche un client, inclure à la fois 'client' et 'user'
+            if ($role === 'client') {
+                $stmt = $this->_bd->prepare("SELECT * FROM users WHERE id = :id AND role IN ('client', 'user')");
+                $stmt->bindValue(':id', $id, PDO::PARAM_INT);
+            } else {
+                $stmt = $this->_bd->prepare("SELECT * FROM users WHERE id = :id AND role = :role");
+                $stmt->bindValue(':id', $id, PDO::PARAM_INT);
+                $stmt->bindValue(':role', $role);
+            }
             $stmt->execute();
             return $stmt->fetch(PDO::FETCH_ASSOC);
         } catch (PDOException $e) {

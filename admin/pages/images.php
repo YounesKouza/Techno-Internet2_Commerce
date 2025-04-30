@@ -59,7 +59,7 @@ if (isset($_POST['action'])) {
                 $image = $productImageDAO->findById($imageId);
                 
                 if ($image) {
-                    // Mettre à jour l'image principale du produit
+                // Mettre à jour l'image principale du produit
                     $productData = [
                         'image_principale' => $image->url_image
                     ];
@@ -241,7 +241,7 @@ include('../templates/header.php');
                                     <td><?php echo $image['id']; ?></td>
                                     <td>
                                         <img src="<?php echo $image['url']; ?>" alt="<?php echo htmlspecialchars($image['name']); ?>" 
-                                            class="img-thumbnail" style="max-width: 100px; max-height: 100px;">
+                                            class="img-thumbnail product-thumb">
                                     </td>
                                     <td><?php echo htmlspecialchars($image['name']); ?></td>
                                     <td><?php echo htmlspecialchars($image['category'] ?: 'Non classé'); ?></td>
@@ -320,52 +320,13 @@ include('../templates/header.php');
     </div>
 </div>
 
-<script>
-document.addEventListener('DOMContentLoaded', function() {
-    // Filtres pour afficher les images liées/non liées
-    document.getElementById('show-all').addEventListener('click', function() {
-        document.querySelectorAll('#images-table tbody tr').forEach(row => {
-            row.style.display = '';
-        });
-    });
-    
-    document.getElementById('show-linked').addEventListener('click', function() {
-        document.querySelectorAll('#images-table tbody tr').forEach(row => {
-            if (row.classList.contains('linked')) {
-                row.style.display = '';
-            } else {
-                row.style.display = 'none';
-            }
-        });
-    });
-    
-    document.getElementById('show-unlinked').addEventListener('click', function() {
-        document.querySelectorAll('#images-table tbody tr').forEach(row => {
-            if (row.classList.contains('unlinked')) {
-                row.style.display = '';
-            } else {
-                row.style.display = 'none';
-            }
-        });
-    });
-    
-    // Initialisation du modal pour lier des images
-    document.querySelectorAll('[data-bs-target="#linkModal"]').forEach(button => {
-        button.addEventListener('click', function() {
-            const imageId = this.getAttribute('data-id');
-            const currentProductId = this.getAttribute('data-current-product');
-            
-            document.getElementById('modal-image-id').value = imageId;
-            
-            const productSelect = document.getElementById('product_id');
-            if (currentProductId) {
-                productSelect.value = currentProductId;
-            } else {
-                productSelect.selectedIndex = 0;
-            }
-        });
-    });
-});
-</script>
+<!-- Bootstrap JavaScript Bundle with Popper -->
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+
+<!-- jQuery -->
+<script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+
+<!-- JavaScript principal -->
+<script src="/Exos/Techno-internet2_commerce/admin/public/js/fonction.js"></script>
 
 <?php include('../templates/footer.php'); ?> 

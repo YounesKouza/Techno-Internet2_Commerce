@@ -94,8 +94,12 @@ function generate_header($page_active, $titre_page = null) {
                                 <i class="fas fa-shopping-cart"></i> 
                                 <span class="d-lg-none">Panier</span>
                                 <?php if (isset($_SESSION['panier']) && count($_SESSION['panier']) > 0): ?>
-                                <span class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger">
+                                <span id="cart-badge" class="cart-count position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger">
                                     <?= count($_SESSION['panier']) ?>
+                                </span>
+                                <?php else: ?>
+                                <span id="cart-badge" class="cart-count position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger" style="display: none;">
+                                    0
                                 </span>
                                 <?php endif; ?>
                             </a>
@@ -125,17 +129,6 @@ function generate_header($page_active, $titre_page = null) {
             </div>
         </nav>
     </header>
-    
-    <script>
-        window.addEventListener('scroll', function() {
-            const navbar = document.querySelector('.navbar');
-            if (window.scrollY > 50) {
-                navbar.classList.add('scrolled');
-            } else {
-                navbar.classList.remove('scrolled');
-            }
-        });
-    </script>
     
     <!-- Contenu principal -->
     <main<?= isset($main_class) ? ' class="'.$main_class.'"' : '' ?>>

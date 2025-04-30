@@ -120,47 +120,13 @@ if (isset($_GET['action']) && isset($_GET['order_id'])) {
     <!-- CSS personnalisé -->
     <link rel="stylesheet" href="/Exos/Techno-internet2_commerce/admin/public/css/style.css">
     
-    <style>
-        .status-badge {
-            min-width: 100px;
-            text-align: center;
-        }
-        
-        .order-detail-header {
-            background-color: #f8f9fa;
-            padding: 15px;
-            border-radius: 5px;
-            margin-bottom: 20px;
-        }
-        
-        .order-summary-card {
-            height: 100%;
-        }
-        
-        .product-row {
-            display: flex;
-            align-items: center;
-            margin-bottom: 10px;
-            padding-bottom: 10px;
-            border-bottom: 1px solid #eee;
-        }
-        
-        .product-row:last-child {
-            border-bottom: none;
-        }
-        
-        .product-row img {
-            width: 50px;
-            height: 50px;
-            object-fit: cover;
-            border-radius: 4px;
-            margin-right: 10px;
-        }
-        
-        .product-details {
-            flex-grow: 1;
-        }
-    </style>
+    <?php 
+    // Ajouter la référence à la fonction add_body_class
+    if (!function_exists('add_body_class')) {
+        require_once __DIR__ . '/../src/php/utils/all_includes.php';
+    }
+    add_body_class(); // Ajout automatique de la classe admin-interface si nécessaire 
+    ?>
 </head>
 <body class="admin-interface">
     <div class="container-fluid">
@@ -232,9 +198,9 @@ if (isset($_GET['action']) && isset($_GET['order_id'])) {
                                                                 <td>
                                                                     <div class="d-flex align-items-center">
                                                                         <?php if (!empty($line['product_image'])): ?>
-                                                                            <img src="../../<?= htmlspecialchars($line['product_image']) ?>" alt="<?= htmlspecialchars($line['product_name']) ?>" class="me-2" style="width: 40px; height: 40px; object-fit: cover;">
+                                                                            <img src="../../<?= htmlspecialchars($line['product_image']) ?>" alt="<?= htmlspecialchars($line['product_name']) ?>" class="me-2 product-image-small">
                                                                         <?php else: ?>
-                                                                            <div class="bg-light me-2 d-flex align-items-center justify-content-center" style="width: 40px; height: 40px;">
+                                                                            <div class="me-2 avatar-placeholder">
                                                                                 <i class="fas fa-image text-muted"></i>
                                                                             </div>
                                                                         <?php endif; ?>
@@ -562,5 +528,8 @@ if (isset($_GET['action']) && isset($_GET['order_id'])) {
     
     <!-- jQuery -->
     <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+    
+    <!-- JavaScript principal -->
+    <script src="/Exos/Techno-internet2_commerce/admin/public/js/fonction.js"></script>
 </body>
 </html>
