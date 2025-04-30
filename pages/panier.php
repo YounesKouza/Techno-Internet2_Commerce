@@ -26,7 +26,7 @@ $total_panier = $panier_info['total'];
     <h1 class="mb-4">Votre panier</h1>
     
     <?php /* Affichage des messages flash si la fonction existe */
-    // if (function_exists('displayFlashMessages')) { displayFlashMessages(); } 
+    if (function_exists('display_flash_message')) { display_flash_message(); } 
     ?>
 
     <?php if (empty($panier_avec_details)): ?>
@@ -41,21 +41,29 @@ $total_panier = $panier_info['total'];
          <div class="cart-actions d-none"></div> <!-- Placeholder pour JS -->
     <?php else: ?>
         <!-- Récapitulatif du panier -->
+        <!-- Débogage: Affichage des données -->
+        <?php if(isset($_GET['debug'])): ?>
+        <div class="alert alert-info mb-3">
+            <h5>Débogage des données panier</h5>
+            <pre><?php print_r($panier_avec_details); ?></pre>
+        </div>
+        <?php endif; ?>
+        <!-- Fin débogage -->
         <div class="card shadow-sm mb-4 cart-summary">
             <div class="card-header bg-light">
                 <h5 class="mb-0">Récapitulatif de votre commande</h5>
             </div>
             <div class="card-body p-0">
                 <div class="table-responsive">
-                    <table class="table align-middle mb-0 cart-table">
+                    <table class="table table-hover cart-table">
                         <thead class="table-light">
                             <tr>
-                                <th style="width: 80px;"></th>
+                                <th class="col-img"></th>
                                 <th>Produit</th>
-                                <th style="width: 120px;" class="text-center">Prix</th>
-                                <th style="width: 150px;" class="text-center">Quantité</th>
-                                <th style="width: 120px;" class="text-end">Sous-total</th>
-                                <th style="width: 50px;"></th>
+                                <th class="col-price">Prix</th>
+                                <th class="col-quantity">Quantité</th>
+                                <th class="col-subtotal">Sous-total</th>
+                                <th class="col-action"></th>
                             </tr>
                         </thead>
                         <tbody>
@@ -76,12 +84,14 @@ $total_panier = $panier_info['total'];
                                     </td>
                                     <td class="text-center price-col"><span><?= number_format($item['prix'], 2, ',', ' ') ?></span> €</td>
                                     <td class="text-center quantity-col">
-                                        <div class="input-group input-group-sm justify-content-center">
-                                            <button type="button" class="btn btn-outline-secondary update-quantity d-flex align-items-center justify-content-center" style="width: 30px; height: 30px;" data-product-id="<?= $item['id'] ?>" data-action="decrease">
+                                        <div class="d-flex align-items-center justify-content-center">
+                                            <button class="btn btn-sm btn-outline-secondary quantity-btn update-quantity" data-product-id="<?= $item['id'] ?>" data-action="decrease">
                                                 <i class="fas fa-minus"></i>
                                             </button>
-                                            <input type="text" class="form-control text-center quantity-input border-secondary" value="<?= $item['quantity'] ?>" readonly style="max-width: 50px; background-color: white;">
-                                            <button type="button" class="btn btn-outline-secondary update-quantity d-flex align-items-center justify-content-center" style="width: 30px; height: 30px;" data-product-id="<?= $item['id'] ?>" data-action="increase" <?= isset($item['stock']) && $item['quantity'] >= $item['stock'] ? 'disabled' : '' ?>>
+                                            
+                                            <input type="text" class="form-control mx-2 quantity-input" value="<?= htmlspecialchars($item['quantity']) ?>" readonly>
+                                            
+                                            <button class="btn btn-sm btn-outline-secondary quantity-btn update-quantity" data-product-id="<?= $item['id'] ?>" data-action="increase" <?= isset($item['stock']) && $item['quantity'] >= $item['stock'] ? 'disabled' : '' ?>>
                                                 <i class="fas fa-plus"></i>
                                             </button>
                                         </div>
@@ -116,182 +126,3 @@ $total_panier = $panier_info['total'];
         <div class="empty-cart-message d-none"></div> <!-- Placeholder pour JS -->
     <?php endif; ?>
 </div>
-
-<?php 
-// Inclusion du script JS spécifique au panier si on a choisi cette approche
-// ou intégration directe ici
-?>
-<script>
-document.addEventListener('DOMContentLoaded', function() {
-
-    // Fonction pour mettre à jour le total global du panier
-    function updateCartTotal() {
-        let total = 0;
-        let itemCount = 0;
-        document.querySelectorAll('.cart-table tbody tr').forEach(row => {
-            const subtotalText = row.querySelector('.subtotal-col span').textContent.replace(/\s/g, '').replace(',', '.');
-            total += parseFloat(subtotalText) || 0;
-            itemCount++;
-        });
-        
-        const totalElement = document.getElementById('cart-total');
-        if (totalElement) {
-            totalElement.textContent = total.toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' €';
-        }
-        
-        // Activer/désactiver le bouton de paiement
-        const checkoutButton = document.querySelector('.checkout-button');
-        if (checkoutButton) {
-             checkoutButton.disabled = itemCount === 0;
-        }
-        
-        // Afficher/Masquer le message panier vide et les éléments associés
-        const emptyCartMessage = document.querySelector('.empty-cart-message');
-        const cartSummary = document.querySelector('.cart-summary');
-        const cartActions = document.querySelector('.cart-actions');
-
-        if (itemCount === 0) {
-            if (emptyCartMessage) emptyCartMessage.classList.remove('d-none');
-            if (cartSummary) cartSummary.classList.add('d-none');
-            if (cartActions) cartActions.classList.add('d-none');
-        } else {
-            // Assurer que les éléments sont visibles si le panier n'est pas vide
-            if (emptyCartMessage) emptyCartMessage.classList.add('d-none');
-            if (cartSummary) cartSummary.classList.remove('d-none');
-            if (cartActions) cartActions.classList.remove('d-none');
-        }
-    }
-
-    // Gestion de la suppression d'un article
-    document.querySelectorAll('.remove-item').forEach(button => {
-        button.addEventListener('click', function() {
-            const productId = this.getAttribute('data-product-id');
-            if (!confirm('Voulez-vous vraiment supprimer cet article du panier ?')) {
-                return;
-            }
-
-            const xhr = new XMLHttpRequest();
-            xhr.open('POST', 'admin/src/php/ajax/remove_from_cart.php', true);
-            xhr.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded');
-            
-            xhr.onload = function() {
-                if (xhr.status === 200) {
-                    try {
-                        const response = JSON.parse(xhr.responseText);
-                        if (response.success) {
-                            // Supprimer la ligne du tableau
-                            const row = document.getElementById('cart-item-' + productId);
-                            if (row) {
-                                row.remove();
-                            }
-                            // Mettre à jour le total et le compteur
-                            updateCartTotal();
-                            updateCartBadge(response.cart_count);
-                            // Afficher un message de succès (peut-être plus discret qu'une alerte)
-                            console.log(response.message);
-                            // alert(response.message); // Décommenter si l'alerte est souhaitée
-                        } else {
-                            alert('Erreur: ' + (response.message || 'Impossible de supprimer l\'article.'));
-                        }
-                    } catch (e) {
-                        console.error('Erreur JSON:', e, xhr.responseText);
-                        alert('Une erreur technique est survenue lors de la suppression.');
-                    }
-                } else {
-                    alert('Erreur serveur: ' + xhr.status + ' lors de la suppression.');
-                }
-            };
-            
-            xhr.onerror = function() {
-                alert('Erreur réseau lors de la suppression de l\'article.');
-            };
-            
-            xhr.send('product_id=' + productId);
-        });
-    });
-
-    // Gestion de la mise à jour de la quantité
-    document.querySelectorAll('.update-quantity').forEach(button => {
-        button.addEventListener('click', function() {
-            const productId = this.getAttribute('data-product-id');
-            const action = this.getAttribute('data-action');
-            
-            // Déterminer la nouvelle quantité
-            const quantityInput = this.parentElement.querySelector('.quantity-input');
-            const currentQuantity = parseInt(quantityInput.value);
-            let newQuantity = currentQuantity;
-            
-            if (action === 'increase') {
-                newQuantity += 1;
-            } else if (action === 'decrease') {
-                newQuantity = Math.max(1, currentQuantity - 1);
-            }
-            
-            if (newQuantity === currentQuantity) {
-                return; // Pas de changement
-            }
-            
-            // Envoyer la mise à jour via AJAX
-            const xhr = new XMLHttpRequest();
-            xhr.open('POST', 'admin/src/php/ajax/update_cart_quantity.php', true);
-            xhr.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded');
-            
-            xhr.onload = function() {
-                if (xhr.status === 200) {
-                    try {
-                        const response = JSON.parse(xhr.responseText);
-                        if (response.success) {
-                            // Mettre à jour l'interface
-                            location.reload(); // Solution simple pour rafraîchir tous les calculs
-                        } else {
-                            alert('Erreur: ' + (response.message || 'Impossible de mettre à jour la quantité.'));
-                        }
-                    } catch (e) {
-                        console.error('Erreur JSON:', e, xhr.responseText);
-                        alert('Une erreur technique est survenue lors de la mise à jour.');
-                    }
-                } else {
-                    alert('Erreur serveur: ' + xhr.status);
-                }
-            };
-            
-            xhr.onerror = function() {
-                alert('Erreur réseau lors de la mise à jour de la quantité.');
-            };
-            
-            xhr.send('product_id=' + productId + '&quantity=' + newQuantity);
-        });
-    });
-
-    // Fonction pour mettre à jour le badge du panier dans le header
-    function updateCartBadge(count) {
-        const cartBadge = document.querySelector('.navbar .fa-shopping-cart ~ .badge'); // Utilisation du tilde
-        if (cartBadge) {
-            cartBadge.textContent = count;
-            if (count > 0) {
-                cartBadge.classList.remove('d-none');
-            } else {
-                cartBadge.classList.add('d-none');
-            }
-        } else if (count > 0) {
-            // Créer le badge s'il n'existe pas
-            const cartLink = document.querySelector('.navbar a[href*="page=panier"]');
-            if (cartLink) {
-                let existingBadge = cartLink.querySelector('.badge');
-                if (!existingBadge) {
-                    const newBadge = document.createElement('span');
-                    newBadge.className = 'position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger';
-                    newBadge.textContent = count;
-                    cartLink.appendChild(newBadge);
-                } else {
-                    existingBadge.textContent = count;
-                    existingBadge.classList.remove('d-none');
-                }
-            }
-        }
-    }
-    
-    // Initialiser l'état du panier au chargement
-    updateCartTotal();
-});
-</script>

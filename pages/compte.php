@@ -136,7 +136,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_profile'])) {
         } else {
             // Préparation des données pour la mise à jour
             $userData = [
-                'id' => $_SESSION['user_id'],
                 'nom' => $nom,
                 'email' => $email,
                 'telephone' => $telephone,
@@ -144,7 +143,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_profile'])) {
             ];
             
             // Mise à jour des informations
-            if ($userDAO->update($userData)) {
+            if ($userDAO->update($_SESSION['user_id'], $userData)) {
                 $success_msg = 'Votre profil a été mis à jour avec succès';
                 
                 // Rafraîchir les informations de l'utilisateur
@@ -304,7 +303,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_profile'])) {
                                                         </a>
                                                         
                                                         <?php if ($order['statut'] === 'en attente' || $order['statut'] === 'en cours'): ?>
-                                                        <form method="post" style="display: inline-block;" action="index_.php?page=compte&section=commandes">
+                                                        <form method="post" class="inline-form" action="index_.php?page=compte&section=commandes">
                                                             <input type="hidden" name="order_id" value="<?= $order['id'] ?>">
                                                             <input type="hidden" name="action" value="change_status">
                                                             <button type="submit" class="btn btn-sm btn-outline-success" title="Marquer comme livré">
@@ -397,40 +396,3 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_profile'])) {
         </div>
     </div>
 </div>
-
-<script>
-document.addEventListener('DOMContentLoaded', function() {
-    // Activer le bon onglet en fonction du fragment d'URL ou de la section
-    let targetTab = '#profile'; // Par défaut
-    
-    // Vérifier si une section est spécifiée dans l'URL
-    <?php if (isset($_GET['section'])): ?>
-    const section = '<?= $_GET['section'] ?>';
-    if (section === 'commandes') {
-        targetTab = '#orders';
-    } else if (section === 'parametres') {
-        targetTab = '#settings';
-    }
-    <?php endif; ?>
-    
-    // Vérifier également le fragment d'URL (priorité plus basse)
-    const hash = window.location.hash;
-    if (hash && !targetTab.endsWith(hash)) {
-        targetTab = hash;
-    }
-    
-    // Activer l'onglet
-    const triggerEl = document.querySelector(`a[href="${targetTab}"]`);
-    if (triggerEl) {
-        new bootstrap.Tab(triggerEl).show();
-    }
-    
-    // Gérer les clics sur les onglets pour mettre à jour l'URL
-    const tabLinks = document.querySelectorAll('.list-group-item[data-bs-toggle="list"]');
-    tabLinks.forEach(tabLink => {
-        tabLink.addEventListener('shown.bs.tab', event => {
-            window.location.hash = event.target.getAttribute('href');
-        });
-    });
-});
-</script>

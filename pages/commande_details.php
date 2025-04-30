@@ -127,9 +127,9 @@ $orderLines = $orderDetails['lines'];
                                         <td>
                                             <div class="d-flex align-items-center">
                                                 <?php if (!empty($line['image_principale'])): ?>
-                                                    <img src="<?= htmlspecialchars($line['image_principale']) ?>" alt="<?= htmlspecialchars($line['titre']) ?>" class="img-thumbnail me-3" style="width: 50px; height: 50px; object-fit: cover;">
+                                                    <img src="<?= htmlspecialchars($line['image_principale']) ?>" alt="<?= htmlspecialchars($line['titre']) ?>" class="img-thumbnail me-3 order-product-thumbnail">
                                                 <?php else: ?>
-                                                    <div class="bg-light me-3 d-flex align-items-center justify-content-center" style="width: 50px; height: 50px;">
+                                                    <div class="bg-light me-3 d-flex align-items-center justify-content-center product-image-placeholder-small">
                                                         <i class="fas fa-image text-muted"></i>
                                                     </div>
                                                 <?php endif; ?>

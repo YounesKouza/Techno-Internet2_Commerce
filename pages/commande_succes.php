@@ -43,8 +43,8 @@ unset($_SESSION['last_order_id']);
 ?>
 
 <div class="container py-5 text-center">
-    <div class="card shadow-sm mx-auto" style="max-width: 600px;">
-        <div class="card-body p-5">
+    <div class="card shadow-sm card-centered">
+        <div class="card-body p-4 text-center">
             <i class="fas fa-check-circle fa-5x text-success mb-4"></i>
             <h1 class="card-title h2 mb-3">Merci pour votre commande !</h1>
             

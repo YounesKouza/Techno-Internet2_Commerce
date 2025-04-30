@@ -130,43 +130,63 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['valider_commande'])) 
         $validationResult = $orderDAO->validateOrderData($formData);
         
         if ($validationResult['valid']) {
-            // Créer la commande en respectant la structure de la base PostgreSQL
+            // Utiliser les informations existantes de l'utilisateur pour l'adresse
             $orderData = [
                 'utilisateur_id' => $_SESSION['user_id'],
                 'montant_total' => $total_final,
-                'statut' => 'en attente'
+                'statut' => 'en attente',
+                'adresse_livraison' => $user->adresse ?? '',
+                'ville_livraison' => $user->ville ?? '',
+                'code_postal_livraison' => $user->code_postal ?? '',
+                'pays_livraison' => $user->pays ?? '',
+                'telephone' => $telephone
             ];
             
             // Debug: Afficher les données de commande
             error_log("Données de commande: " . json_encode($orderData));
             error_log("Items panier: " . json_encode($panier_avec_details));
             
-            // Traitement de la commande
-            $processResult = $orderDAO->processOrder($orderData, $panier_avec_details, $user);
+            // Vérification de l'adresse
+            if (empty($orderData['adresse_livraison']) || empty($orderData['ville_livraison']) || 
+                empty($orderData['code_postal_livraison']) || empty($orderData['pays_livraison'])) {
+                error_log("ATTENTION: Informations d'adresse manquantes ou incomplètes");
+                
+                // Si l'adresse est manquante, on utilise une valeur par défaut
+                if (empty($orderData['adresse_livraison'])) $orderData['adresse_livraison'] = 'Non spécifiée';
+                if (empty($orderData['ville_livraison'])) $orderData['ville_livraison'] = 'Non spécifiée';
+                if (empty($orderData['code_postal_livraison'])) $orderData['code_postal_livraison'] = '00000';
+                if (empty($orderData['pays_livraison'])) $orderData['pays_livraison'] = 'BE';
+            }
             
-            if ($processResult['success']) {
-                // Mise à jour des infos utilisateur si modifiées
-                if ($telephone != $user->telephone) {
+            // Traitement de la commande
+            $processResult = $orderDAO->processOrder($orderData, $panier_avec_details, [
+                'mode_paiement' => $mode_paiement,
+                'numero_carte' => $numero_carte,
+                'date_expiration' => $date_expiration,
+                'cvv' => $cvv
+            ]);
+            error_log("Résultat du processus: " . json_encode($processResult));
+            
+            if ($processResult && $processResult !== false) {
+                // Mise à jour du téléphone si modifié
                     $userData = [
-                        'id' => $_SESSION['user_id'],
                         'telephone' => $telephone
                     ];
-                    $userDAO->update($userData);
-                }
+                $userDAO->update($_SESSION['user_id'], $userData);
                 
                 // Vider le panier
                 $cartDAO->clearCart();
                 
                 // Stocker l'ID de commande en session pour la page de confirmation
-                $_SESSION['last_order_id'] = $processResult['order_id'];
+                $_SESSION['last_order_id'] = $processResult;
                 
                 // Rediriger vers la page de confirmation
                 header('Location: index_.php?page=commande_succes');
                 exit;
             } else {
-                $error_message = $processResult['message'];
+                $error_message = "Erreur lors du traitement de la commande";
                 // Debug: Afficher plus de détails sur l'erreur
-                error_log("Échec du traitement de la commande: " . $processResult['message']);
+                error_log("Échec du traitement de la commande: commande non créée");
             }
         } else {
             // Afficher les erreurs
@@ -259,7 +279,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['valider_commande'])) 
                             </div>
                             
                             <!-- Détails de la carte (affichés conditionnellement) -->
-                            <div id="details-carte" class="mb-4" <?= $mode_paiement !== 'carte' ? 'style="display: none;"' : '' ?>>
+                            <div id="details-carte" class="mb-4 conditional-section <?= $mode_paiement === 'carte' ? 'active' : '' ?>">
                                 <h5 class="mb-3">Détails de la carte</h5>
                                 <div class="row">
                                     <div class="col-12 mb-3">
@@ -305,7 +325,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['valider_commande'])) 
                         <?php foreach ($panier_avec_details as $produit): ?>
                             <div class="d-flex mb-3">
                                 <div class="flex-shrink-0">
-                                    <img src="<?= $produit['image'] ?>" alt="<?= htmlspecialchars($produit['titre']) ?>" class="img-thumbnail" style="width: 60px;">
+                                    <img src="<?= htmlspecialchars($produit['image']) ?>" alt="<?= htmlspecialchars($produit['titre']) ?>" class="img-thumbnail cart-product-thumbnail">
                                 </div>
                                 <div class="flex-grow-1 ms-3">
                                     <h6 class="mb-0"><?= htmlspecialchars($produit['titre']) ?></h6>
@@ -355,41 +375,3 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['valider_commande'])) 
         </div>
     <?php endif; ?>
 </div>
-
-<script>
-// Afficher/masquer les détails de la carte en fonction du mode de paiement sélectionné
-document.addEventListener('DOMContentLoaded', function() {
-    const paiementInputs = document.querySelectorAll('input[name="mode_paiement"]');
-    const detailsCarte = document.getElementById('details-carte');
-    
-    paiementInputs.forEach(input => {
-        input.addEventListener('change', function() {
-            if (this.value === 'carte') {
-                detailsCarte.style.display = 'block';
-            } else {
-                detailsCarte.style.display = 'none';
-            }
-        });
-    });
-});
-
-// Validation du formulaire
-(function () {
-    'use strict'
-
-    // Récupérer tous les formulaires qui nécessitent l'application des styles de validation Bootstrap personnalisés
-    const forms = document.querySelectorAll('.needs-validation, #commande-form')
-
-    // Boucle pour empêcher la soumission et appliquer la validation
-    Array.from(forms).forEach(form => {
-        form.addEventListener('submit', event => {
-            if (!form.checkValidity()) {
-                event.preventDefault()
-                event.stopPropagation()
-            }
-
-            form.classList.add('was-validated')
-        }, false)
-    })
-})()
-</script>

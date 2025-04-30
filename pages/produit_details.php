@@ -19,15 +19,21 @@ if ($product_id <= 0) {
 // Fonction pour corriger les chemins d'image
 function fixImagePath($path) {
     if (empty($path)) {
-        return '';
+        return 'admin/public/images/default.jpg'; // Image par défaut
+    }
+    
+    // Si l'image commence déjà par http, c'est une URL complète
+    if (strpos($path, 'http') === 0) {
+        return $path;
     }
     
     // Supprimer le slash initial s'il existe
     $path = ltrim($path, '/');
     
-    // Vérifier si le chemin commence par admin/
+    // Méthode simple qui fonctionne dans le catalogue
     if (strpos($path, 'admin/') !== 0) {
-        $path = 'admin/public/images/' . basename($path);
+        // Ajouter le préfixe si nécessaire
+        $path = 'admin/' . $path;
     }
     
     // Remplacer les doubles slashes par un seul
@@ -43,6 +49,20 @@ $productImageDAO = new ProductImageDAO($pdo);
 
 // Récupération des informations du produit
 $product = $productDAO->findById($product_id);
+
+// Debug - Afficher les informations du produit
+// Il ne sera visible que lorsque vous l'appelerez directement - vous pourrez ensuite le supprimer
+if (isset($_GET['debug']) && $_GET['debug'] == 1) {
+    echo "<div style='position: fixed; top: 100px; right: 10px; background: rgba(0,0,0,0.8); color: #0f0; padding: 10px; z-index: 9999; max-height: 80%; overflow-y: auto; font-family: monospace;'>";
+    echo "<h3>Debug Produit ID: $product_id</h3>";
+    echo "<pre>";
+    print_r($product);
+    echo "</pre>";
+    echo "<h4>Stock:</h4>";
+    echo "isset(product->stock): " . (isset($product->stock) ? "OUI" : "NON") . "<br>";
+    echo "product->stock: " . ($product->stock ?? "NULL") . "<br>";
+    echo "</div>";
+}
 
 // Si le produit n'existe pas ou n'est pas actif, redirection vers la page 404
 if (!$product || !$product->actif) {
@@ -100,23 +120,22 @@ $discount_price = null;
         <div class="col-md-6 mb-4">
             <div id="productImageCarousel" class="carousel slide" data-bs-ride="carousel">
                 <div class="carousel-inner rounded shadow">
-                    <?php if (isset($product->image_principale) && !empty($product->image_principale)): ?>
+                    <?php 
+                    // Garantir que l'image principale est correctement définie
+                    $main_image = $product->image_principale;
+                    if (empty($main_image)) {
+                        $main_image = 'admin/public/images/default.jpg';
+                    }
+                    ?>
                         <div class="carousel-item active">
-                            <img src="<?= htmlspecialchars($product->image_principale) ?>" class="d-block w-100" alt="<?= htmlspecialchars($product->titre ?? 'Image principale') ?>">
+                        <img src="<?= htmlspecialchars($main_image) ?>" class="d-block w-100" alt="<?= htmlspecialchars($product->titre ?? 'Image principale') ?>">
                         </div>
-                    <?php endif; ?>
                     
                     <?php foreach ($product_images as $index => $image): ?>
-                        <div class="carousel-item <?= (!isset($product->image_principale) && $index === 0) ? 'active' : '' ?>">
+                        <div class="carousel-item">
                             <img src="<?= htmlspecialchars($image->url_image ?? '') ?>" class="d-block w-100" alt="<?= htmlspecialchars($product->titre ?? 'Image produit') ?>">
                         </div>
                     <?php endforeach; ?>
-                    
-                    <?php if ((!isset($product->image_principale) || empty($product->image_principale)) && count($product_images) === 0): ?>
-                        <div class="carousel-item active">
-                            <img src="admin/public/images/fond/1.jpg" class="d-block w-100" alt="Image par défaut">
-                        </div>
-                    <?php endif; ?>
                 </div>
                 
                 <?php if ((isset($product->image_principale) && !empty($product->image_principale)) || count($product_images) > 0): ?>
@@ -225,16 +244,15 @@ $discount_price = null;
             <!-- Ajout au panier -->
             <?php if (isset($product->stock) && $product->stock > 0): ?>
                 <div class="mb-4">
-                    <form id="add-to-cart-form" class="d-flex align-items-center">
-                        <input type="hidden" name="product_id" value="<?= $product->id ?>">
-                        <div class="me-3" style="width: 100px;">
-                            <label for="quantity" class="form-label">Quantité</label>
-                            <input type="number" class="form-control" id="quantity" name="quantity" value="1" min="1" max="<?= $product->stock ?>" required>
+                    <div class="d-flex align-items-center">
+                        <div class="quantity-container me-3">
+                            <label for="quantity-<?= $product->id ?>" class="form-label">Quantité</label>
+                            <input type="number" class="form-control" id="quantity-<?= $product->id ?>" name="quantity" value="1" min="1" max="<?= $product->stock ?>" required>
                         </div>
-                        <button type="submit" class="btn btn-primary btn-lg">
+                        <button type="button" class="btn btn-primary btn-lg add-to-cart" data-product-id="<?= $product->id ?>">
                             <i class="fas fa-shopping-cart me-2"></i> Ajouter au panier
                         </button>
-                    </form>
+                    </div>
                     <div id="add-to-cart-message" class="mt-2"></div>
                 </div>
             <?php else: ?>
@@ -249,7 +267,7 @@ $discount_price = null;
             <!-- Partage -->
             <div class="mb-4">
                 <h5>Partager ce produit</h5>
-                <div class="d-flex">
+                    <div class="d-flex">
                     <a href="https://www.facebook.com/sharer/sharer.php?u=<?= urlencode('http://' . $_SERVER['HTTP_HOST'] . $_SERVER['REQUEST_URI']) ?>" class="btn btn-outline-primary me-2" target="_blank">
                         <i class="fab fa-facebook-f"></i>
                     </a>
@@ -266,7 +284,7 @@ $discount_price = null;
             </div>
         </div>
     </div>
-    
+
     <!-- Produits similaires -->
     <?php if (count($filtered_similar_products) > 0): ?>
     <div class="mt-5">
@@ -276,13 +294,14 @@ $discount_price = null;
                 <div class="col-md-3 col-sm-6 mb-4">
                     <div class="card h-100 product-card">
                         <a href="index_.php?page=produit_details&id=<?= $similar_product->id ?>">
-                            <?php if (!empty($similar_product->image_principale)): ?>
-                                <img src="<?= htmlspecialchars($similar_product->image_principale) ?>" class="card-img-top" alt="<?= htmlspecialchars($similar_product->titre) ?>">
-                            <?php else: ?>
-                                <div class="card-img-top d-flex align-items-center justify-content-center bg-light" style="height: 200px;">
-                                    <i class="fas fa-image text-muted fa-3x"></i>
-                                </div>
-                            <?php endif; ?>
+                            <?php 
+                            // Utiliser la même approche que dans le catalogue
+                            $image_path = $similar_product->image_principale;
+                            if (empty($image_path)) {
+                                $image_path = 'admin/public/images/default.jpg';
+                            }
+                            ?>
+                            <img src="<?= htmlspecialchars($image_path) ?>" class="card-img-top" alt="<?= htmlspecialchars($similar_product->titre) ?>">
                         </a>
                         <div class="card-body">
                             <h5 class="card-title">
@@ -297,89 +316,4 @@ $discount_price = null;
         </div>
     </div>
     <?php endif; ?>
-</div>
-
-<script>
-document.addEventListener('DOMContentLoaded', function() {
-    // Activer les miniatures pour navigation du carousel
-    document.querySelectorAll('.product-thumbnail').forEach(function(thumbnail) {
-        thumbnail.addEventListener('click', function() {
-            const target = this.getAttribute('data-bs-target');
-            const slideIndex = this.getAttribute('data-bs-slide-to');
-            const carousel = bootstrap.Carousel.getInstance(document.querySelector(target));
-            carousel.to(slideIndex);
-        });
-    });
-
-    // Gestion de l'ajout au panier via AJAX
-    const addToCartForm = document.getElementById('add-to-cart-form');
-    const messageDiv = document.getElementById('add-to-cart-message');
-
-    if (addToCartForm) {
-        addToCartForm.addEventListener('submit', function(e) {
-            e.preventDefault();
-            const formData = new FormData(this);
-            
-            // Ajouter l'action à FormData
-            formData.append('action', 'add');
-
-            // Désactiver le bouton pendant le traitement
-            const submitButton = this.querySelector('button[type="submit"]');
-            submitButton.disabled = true;
-            submitButton.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i> Ajout en cours...';
-
-            fetch('admin/src/php/ajax/cart_actions.php', {
-                method: 'POST',
-                body: formData
-            })
-            .then(response => response.json())
-            .then(data => {
-                // Réactiver le bouton
-                submitButton.disabled = false;
-                submitButton.innerHTML = '<i class="fas fa-shopping-cart me-2"></i> Ajouter au panier';
-
-                if (data.success) {
-                    // Afficher un message de succès
-                    messageDiv.innerHTML = `
-                        <div class="alert alert-success alert-dismissible fade show" role="alert">
-                            <i class="fas fa-check-circle me-2"></i> ${data.message}
-                            <a href="index_.php?page=panier" class="alert-link ms-2">Voir mon panier</a>
-                            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
-                        </div>
-                    `;
-                    
-                    // Mettre à jour le compteur de panier dans la navigation
-                    const cartCountElement = document.querySelector('.cart-count');
-                    if (cartCountElement) {
-                        cartCountElement.textContent = data.cart_count;
-                        cartCountElement.classList.remove('d-none');
-                    }
-                } else {
-                    // Afficher un message d'erreur
-                    messageDiv.innerHTML = `
-                        <div class="alert alert-danger alert-dismissible fade show" role="alert">
-                            <i class="fas fa-exclamation-circle me-2"></i> ${data.message}
-                            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
-                        </div>
-                    `;
-                }
-            })
-            .catch(error => {
-                console.error('Erreur:', error);
-                
-                // Réactiver le bouton
-                submitButton.disabled = false;
-                submitButton.innerHTML = '<i class="fas fa-shopping-cart me-2"></i> Ajouter au panier';
-                
-                // Afficher un message d'erreur
-                messageDiv.innerHTML = `
-                    <div class="alert alert-danger alert-dismissible fade show" role="alert">
-                        <i class="fas fa-exclamation-circle me-2"></i> Une erreur est survenue lors de l'ajout au panier.
-                        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
-                    </div>
-                `;
-            });
-        });
-    }
-});
-</script> 
+</div> 

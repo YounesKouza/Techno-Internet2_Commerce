@@ -63,10 +63,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             
             // Mise à jour de la date de dernière connexion
             $userData = [
-                'id' => $user->id,
                 'date_derniere_connexion' => date('Y-m-d H:i:s')
             ];
-            $userDAO->update($userData);
+            $userDAO->update($user->id, $userData);
             
             // Redirection en fonction du rôle
             if ($user->role === 'admin') {
@@ -148,10 +147,6 @@ if (isset($_GET['redirect_url'])) {
                             </button>
                         </div>
                     </form>
-                    
-                    <div class="mt-3 text-center">
-                        <a href="#" class="text-decoration-none">Mot de passe oublié ?</a>
-                    </div>
                 </div>
                 <div class="card-footer bg-light text-center">
                     <p class="mb-0">Vous n'avez pas de compte ? <a href="index_.php?page=inscription" class="text-decoration-none">Créer un compte</a></p>
@@ -174,26 +169,5 @@ if (isset($_GET['redirect_url'])) {
     </div>
 </div>
 
-<script>
-    // Script pour afficher/masquer le mot de passe
-    document.addEventListener('DOMContentLoaded', function() {
-        const toggleButtons = document.querySelectorAll('.toggle-password');
-        
-        toggleButtons.forEach(button => {
-            button.addEventListener('click', function() {
-                const input = this.parentNode.querySelector('input');
-                const icon = this.querySelector('i');
-                
-                if (input.type === 'password') {
-                    input.type = 'text';
-                    icon.classList.remove('fa-eye');
-                    icon.classList.add('fa-eye-slash');
-                } else {
-                    input.type = 'password';
-                    icon.classList.remove('fa-eye-slash');
-                    icon.classList.add('fa-eye');
-                }
-            });
-        });
-    });
-</script> 
+<!-- JavaScript principal -->
+<script src="/Exos/Techno-internet2_commerce/admin/public/js/fonction.js"></script> 

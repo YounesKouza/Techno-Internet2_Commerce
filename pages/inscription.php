@@ -78,7 +78,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 'mot_de_passe' => $password, // Le hachage est géré par la méthode create du DAO
                 'telephone' => $telephone,
                 'adresse' => $adresse,
-                'role' => 'user'
+                'role' => 'client'
             ];
             
             // Création de l'utilisateur via le DAO
@@ -205,51 +205,4 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             <?php endif; ?>
         </div>
     </div>
-</div>
-
-<script>
-document.addEventListener('DOMContentLoaded', function() {
-    // Afficher/masquer le mot de passe
-    const togglePassword = document.getElementById('toggle-password');
-    const passwordInput = document.getElementById('password');
-    
-    if (togglePassword && passwordInput) {
-        togglePassword.addEventListener('click', function() {
-            const type = passwordInput.getAttribute('type') === 'password' ? 'text' : 'password';
-            passwordInput.setAttribute('type', type);
-            
-            // Changer l'icône
-            const icon = this.querySelector('i');
-            if (type === 'text') {
-                icon.classList.remove('fa-eye');
-                icon.classList.add('fa-eye-slash');
-            } else {
-                icon.classList.remove('fa-eye-slash');
-                icon.classList.add('fa-eye');
-            }
-        });
-    }
-    
-    // Validation du formulaire
-    const form = document.getElementById('inscription-form');
-    const confirmPassword = document.getElementById('confirm_password');
-    
-    if (form && confirmPassword) {
-        form.addEventListener('submit', function(event) {
-            if (passwordInput.value !== confirmPassword.value) {
-                confirmPassword.setCustomValidity('Les mots de passe ne correspondent pas');
-            } else {
-                confirmPassword.setCustomValidity('');
-            }
-        });
-        
-        confirmPassword.addEventListener('input', function() {
-            if (passwordInput.value !== this.value) {
-                this.setCustomValidity('Les mots de passe ne correspondent pas');
-            } else {
-                this.setCustomValidity('');
-            }
-        });
-    }
-});
-</script> 
+</div> 

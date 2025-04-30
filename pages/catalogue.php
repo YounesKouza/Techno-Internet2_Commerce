@@ -8,9 +8,9 @@ $titre_page = 'Catalogue';
 $js_specifique = 'catalogue';
 
 // Récupération des paramètres de filtre
-$category_id = isset($_GET['category']) ? intval($_GET['category']) : null;
+$category_id = isset($_GET['category']) && $_GET['category'] !== '' ? intval($_GET['category']) : null;
 $search = isset($_GET['search']) ? htmlspecialchars($_GET['search']) : '';
-$sort = isset($_GET['sort']) ? htmlspecialchars($_GET['sort']) : 'name_asc';
+$sort = isset($_GET['sort']) && $_GET['sort'] !== '' ? htmlspecialchars($_GET['sort']) : 'name_asc';
 $page_num = isset($_GET['page_num']) ? intval($_GET['page_num']) : 1;
 $per_page = 12;
 
@@ -81,39 +81,54 @@ $categories = $categoryDAO->findAll();
     <div class="catalogue-header">
         <h1 class="catalogue-title">Notre Collection de Meubles</h1>
         <p class="catalogue-description">Explorez notre gamme complète de meubles pour trouver les pièces parfaites pour votre maison.</p>
-        <form action="" method="get" class="d-flex justify-content-center mt-4">
-            <input type="hidden" name="page" value="catalogue">
-            <input type="text" name="search" value="<?= $search ?>" class="form-control w-50 me-2" placeholder="Rechercher par nom ou description...">
-            <button type="submit" class="btn btn-primary">
-                <i class="fas fa-search"></i>
-            </button>
-        </form>
     </div>
 
-    <!-- Filtres et tri -->
-    <div class="row mb-4 filters-section">
-        <div class="col-md-6 mb-3 mb-md-0">
-            <label for="category-filter" class="filter-label">Filtrer par catégorie :</label>
-            <select name="category" id="category-filter" class="form-select">
-                <option value="">Toutes les catégories</option>
-                <?php foreach ($categories as $category): ?>
-                    <option value="<?= $category->id ?>" <?= $category_id == $category->id ? 'selected' : '' ?>>
-                        <?= htmlspecialchars($category->nom) ?> (<?= $categoryDAO->countProducts($category->id) ?>)
-                    </option>
-                <?php endforeach; ?>
-            </select>
+    <!-- Formulaire de recherche et filtres combinés -->
+    <form action="" method="get" class="mb-4">
+        <input type="hidden" name="page" value="catalogue">
+        <input type="hidden" name="page_num" value="1"> <!-- Reset page_num to 1 when form submitted -->
+        
+        <div class="row g-3">
+            <!-- Recherche -->
+            <div class="col-md-12 mb-3">
+                <div class="input-group">
+                    <input type="text" name="search" value="<?= $search ?>" class="form-control" placeholder="Rechercher par nom ou description...">
+                    <button type="submit" class="btn btn-primary">
+                        <i class="fas fa-search"></i> Rechercher
+                    </button>
+                </div>
+            </div>
+            
+            <!-- Filtres et tri -->
+            <div class="col-md-6">
+                <label for="category-filter" class="filter-label">Filtrer par catégorie :</label>
+                <select name="category" id="category-filter" class="form-select">
+                    <option value="">Toutes les catégories</option>
+                    <?php foreach ($categories as $category): ?>
+                        <option value="<?= $category->id ?>" <?= $category_id == $category->id ? 'selected' : '' ?>>
+                            <?= htmlspecialchars($category->nom) ?> (<?= $categoryDAO->countProducts($category->id) ?>)
+                        </option>
+                    <?php endforeach; ?>
+                </select>
+            </div>
+            
+            <div class="col-md-6">
+                <label for="sort-products" class="filter-label">Trier par :</label>
+                <select name="sort" id="sort-products" class="form-select">
+                    <option value="name_asc" <?= $sort == 'name_asc' ? 'selected' : '' ?>>Nom (A-Z)</option>
+                    <option value="name_desc" <?= $sort == 'name_desc' ? 'selected' : '' ?>>Nom (Z-A)</option>
+                    <option value="price_asc" <?= $sort == 'price_asc' ? 'selected' : '' ?>>Prix croissant</option>
+                    <option value="price_desc" <?= $sort == 'price_desc' ? 'selected' : '' ?>>Prix décroissant</option>
+                    <option value="newest" <?= $sort == 'newest' ? 'selected' : '' ?>>Plus récents</option>
+                </select>
+            </div>
+            
+            <div class="col-12">
+                <button type="submit" class="btn btn-primary">Appliquer les filtres</button>
+                <a href="index_.php?page=catalogue" class="btn btn-outline-secondary ms-2">Réinitialiser les filtres</a>
+            </div>
         </div>
-        <div class="col-md-6">
-            <label for="sort-products" class="filter-label">Trier par :</label>
-            <select name="sort" id="sort-products" class="form-select">
-                <option value="name_asc" <?= $sort == 'name_asc' ? 'selected' : '' ?>>Nom (A-Z)</option>
-                <option value="name_desc" <?= $sort == 'name_desc' ? 'selected' : '' ?>>Nom (Z-A)</option>
-                <option value="price_asc" <?= $sort == 'price_asc' ? 'selected' : '' ?>>Prix croissant</option>
-                <option value="price_desc" <?= $sort == 'price_desc' ? 'selected' : '' ?>>Prix décroissant</option>
-                <option value="newest" <?= $sort == 'newest' ? 'selected' : '' ?>>Plus récents</option>
-            </select>
-        </div>
-    </div>
+    </form>
 
     <!-- Affichage du nombre de résultats -->
     <div class="mb-3 text-muted">
@@ -173,7 +188,7 @@ $categories = $categoryDAO->findAll();
         <nav aria-label="Navigation des pages" class="mt-4">
             <ul class="pagination justify-content-center">
                 <li class="page-item <?= ($page_num <= 1) ? 'disabled' : '' ?>">
-                    <a class="page-link" href="?page=catalogue&search=<?= urlencode($search) ?>&category=<?= $category_id ?>&sort=<?= $sort ?>&page_num=<?= $page_num - 1 ?>" aria-label="Précédent">
+                    <a class="page-link" href="?page=catalogue<?= !empty($search) ? '&search=' . urlencode($search) : '' ?><?= $category_id !== null ? '&category=' . $category_id : '' ?><?= !empty($sort) ? '&sort=' . $sort : '' ?>&page_num=<?= $page_num - 1 ?>" aria-label="Précédent">
                         <span aria-hidden="true">&laquo;</span>
                     </a>
                 </li>
@@ -184,7 +199,7 @@ $categories = $categoryDAO->findAll();
                 $end_page = min($total_pages, $page_num + 2);
                 
                 if ($start_page > 1) {
-                    echo '<li class="page-item"><a class="page-link" href="?page=catalogue&search='.urlencode($search).'&category='.$category_id.'&sort='.$sort.'&page_num=1">1</a></li>';
+                    echo '<li class="page-item"><a class="page-link" href="?page=catalogue' . (!empty($search) ? '&search=' . urlencode($search) : '') . ($category_id !== null ? '&category=' . $category_id : '') . (!empty($sort) ? '&sort=' . $sort : '') . '&page_num=1">1</a></li>';
                     if ($start_page > 2) {
                         echo '<li class="page-item disabled"><span class="page-link">...</span></li>';
                     }
@@ -192,7 +207,7 @@ $categories = $categoryDAO->findAll();
                 
                 for ($i = $start_page; $i <= $end_page; $i++): ?>
                     <li class="page-item <?= ($i == $page_num) ? 'active' : '' ?>">
-                        <a class="page-link" href="?page=catalogue&search=<?= urlencode($search) ?>&category=<?= $category_id ?>&sort=<?= $sort ?>&page_num=<?= $i ?>"><?= $i ?></a>
+                        <a class="page-link" href="?page=catalogue<?= !empty($search) ? '&search=' . urlencode($search) : '' ?><?= $category_id !== null ? '&category=' . $category_id : '' ?><?= !empty($sort) ? '&sort=' . $sort : '' ?>&page_num=<?= $i ?>"><?= $i ?></a>
                     </li>
                 <?php endfor; 
                 
@@ -200,12 +215,12 @@ $categories = $categoryDAO->findAll();
                     if ($end_page < $total_pages - 1) {
                         echo '<li class="page-item disabled"><span class="page-link">...</span></li>';
                     }
-                    echo '<li class="page-item"><a class="page-link" href="?page=catalogue&search='.urlencode($search).'&category='.$category_id.'&sort='.$sort.'&page_num='.$total_pages.'">'.$total_pages.'</a></li>';
+                    echo '<li class="page-item"><a class="page-link" href="?page=catalogue' . (!empty($search) ? '&search=' . urlencode($search) : '') . ($category_id !== null ? '&category=' . $category_id : '') . (!empty($sort) ? '&sort=' . $sort : '') . '&page_num=' . $total_pages . '">' . $total_pages . '</a></li>';
                 }
                 ?>
                 
                 <li class="page-item <?= ($page_num >= $total_pages) ? 'disabled' : '' ?>">
-                    <a class="page-link" href="?page=catalogue&search=<?= urlencode($search) ?>&category=<?= $category_id ?>&sort=<?= $sort ?>&page_num=<?= $page_num + 1 ?>" aria-label="Suivant">
+                    <a class="page-link" href="?page=catalogue<?= !empty($search) ? '&search=' . urlencode($search) : '' ?><?= $category_id !== null ? '&category=' . $category_id : '' ?><?= !empty($sort) ? '&sort=' . $sort : '' ?>&page_num=<?= $page_num + 1 ?>" aria-label="Suivant">
                         <span aria-hidden="true">&raquo;</span>
                     </a>
                 </li>
@@ -213,71 +228,3 @@ $categories = $categoryDAO->findAll();
         </nav>
     <?php endif; ?>
 </div>
-
-<script>
-document.addEventListener('DOMContentLoaded', function() {
-    function updateURL() {
-        const category = document.getElementById('category-filter').value;
-        const sort = document.getElementById('sort-products').value;
-        const search = document.querySelector('input[name="search"]').value;
-        
-        let url = 'index_.php?page=catalogue';
-        if (category) url += '&category=' + category;
-        if (sort) url += '&sort=' + sort;
-        if (search) url += '&search=' + encodeURIComponent(search);
-        
-        window.location.href = url;
-    }
-
-    document.getElementById('category-filter').addEventListener('change', updateURL);
-    document.getElementById('sort-products').addEventListener('change', updateURL);
-    
-    // Gestion de l'ajout au panier (inchangé)
-    const addToCartButtons = document.querySelectorAll('.add-to-cart');
-    addToCartButtons.forEach(button => {
-        button.addEventListener('click', function() {
-            const productId = this.getAttribute('data-product-id');
-            
-            const xhr = new XMLHttpRequest();
-            xhr.open('POST', 'admin/src/php/ajax/add_to_cart.php', true);
-            xhr.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded');
-            xhr.onload = function() {
-                if (xhr.status === 200) {
-                    try {
-                        const response = JSON.parse(xhr.responseText);
-                        if (response.success) {
-                            alert('Produit ajouté au panier !');
-                            // Mettre à jour le nombre d'articles dans le panier (exemple simple)
-                            const cartBadge = document.querySelector('.fa-shopping-cart + .badge');
-                            if (cartBadge) {
-                                cartBadge.textContent = response.cart_count;
-                                cartBadge.classList.remove('d-none');
-                            } else {
-                                // Créer le badge si il n'existe pas
-                                const cartLink = document.querySelector('a[href*="page=panier"]');
-                                if(cartLink) {
-                                    const newBadge = document.createElement('span');
-                                    newBadge.className = 'position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger';
-                                    newBadge.textContent = response.cart_count;
-                                    cartLink.appendChild(newBadge);
-                                }
-                            }
-                        } else {
-                            alert('Erreur: ' + (response.message || 'Impossible d\'ajouter au panier'));
-                        }
-                    } catch (e) {
-                        console.error('Erreur JSON:', e);
-                        alert('Une erreur technique est survenue.');
-                    }
-                } else {
-                     alert('Erreur serveur: ' + xhr.status);
-                }
-            };
-             xhr.onerror = function() {
-                alert('Erreur réseau lors de l\'ajout au panier.');
-            };
-            xhr.send('product_id=' + productId + '&quantity=1');
-        });
-    });
-});
-</script>
