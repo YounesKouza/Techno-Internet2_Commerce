@@ -55,7 +55,7 @@
 }
 
 body {
-  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
   line-height: 1.6;
   overflow-x: hidden;
 }
@@ -179,7 +179,7 @@ body:not(.admin-interface) .hero-section {
   margin: 0;
   padding: 0;
   width: 100%;
-  display: flex;
+    display: flex;
   align-items: center;
   margin-top: -76px;
   margin-bottom: 2rem;
@@ -228,7 +228,7 @@ body:not(.admin-interface) .category-card:hover {
 
 body:not(.admin-interface) .category-card img {
   width: 100%;
-  height: 100%;
+    height: 100%;
   object-fit: cover;
   transition: transform 0.5s ease;
 }
@@ -271,8 +271,8 @@ body:not(.admin-interface) .product-card {
 }
 
 body:not(.admin-interface) .product-card:hover {
-  transform: translateY(-5px);
-  box-shadow: 0 10px 20px rgba(0, 0, 0, 0.1);
+    transform: translateY(-5px);
+    box-shadow: 0 10px 20px rgba(0, 0, 0, 0.1);
 }
 
 body:not(.admin-interface) .product-img-link {
@@ -282,7 +282,7 @@ body:not(.admin-interface) .product-img-link {
 
 body:not(.admin-interface) .product-img {
   height: 220px;
-  overflow: hidden;
+    overflow: hidden;
 }
 
 body:not(.admin-interface) .product-img img {
@@ -490,7 +490,7 @@ body.admin-interface .main-content {
   margin-left: 16.66%;
   width: 83.33%;
   background-color: #f1f4f9;
-  position: relative;
+    position: relative;
 }
 
 /* =========================================
@@ -696,7 +696,7 @@ body.admin-interface .best-selling-product-image {
   width: 60px;
   height: 60px;
   border-radius: 4px;
-  object-fit: cover;
+    object-fit: cover;
   margin-right: 1rem;
   background-color: #f8f9fa;
 }
@@ -733,4 +733,279 @@ body.admin-interface .best-selling-product-info .sold {
     margin-left: 0;
     width: 100%;
   }
+}
+
+/* =========================================
+   AJOUTS POUR ÉLIMINER LE CSS INLINE
+   ========================================= */
+
+/* Styles pour les images de prévisualisation */
+.img-thumbnail.preview-thumb {
+  max-height: 200px;
+}
+
+.img-thumbnail.product-thumb {
+  max-width: 100px;
+  max-height: 100px;
+}
+
+/* Styles pour les largeurs de colonnes dans les tableaux */
+.table .col-id {
+  width: 70px;
+}
+
+.table .col-img {
+  width: 80px;
+}
+
+.table .col-price {
+  width: 120px;
+  text-align: center;
+}
+
+.table .col-quantity {
+  width: 150px;
+  text-align: center;
+}
+
+.table .col-subtotal {
+  width: 120px;
+  text-align: right;
+}
+
+.table .col-action {
+  width: 50px;
+}
+
+/* Styles pour les images de produits */
+.product-image-small {
+  width: 40px;
+  height: 40px;
+  object-fit: cover;
+}
+
+.product-image-medium {
+  width: 50px;
+  height: 50px;
+  object-fit: cover;
+}
+
+.product-image-large {
+  width: 60px;
+  height: 60px;
+  object-fit: cover;
+}
+
+/* Styles pour les avatars et éléments circulaires */
+.avatar-placeholder {
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-color: var(--admin-light-gray);
+}
+
+.avatar-placeholder-large {
+  width: 80px;
+  height: 80px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-color: var(--admin-light-gray);
+  border-radius: 50%;
+}
+
+/* Styles pour les boutons de quantité dans le panier */
+.quantity-btn {
+  width: 30px;
+  height: 30px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.quantity-input {
+  min-width: 50px;
+  width: 50px;
+  background-color: white;
+  text-align: center;
+    font-weight: bold;
+  color: #333;
+  border: 1px solid #ced4da;
+  padding: 0.375rem 0.25rem;
+}
+
+/* Styles pour la section produits */
+.product-card-detail {
+  margin-right: 1rem;
+  width: 100px;
+}
+
+/* Styles pour les composants de l'interface d'ajout/édition de produit */
+.product-image-container {
+  position: relative;
+  margin-bottom: 15px;
+}
+
+.product-image-container img {
+  width: 100%;
+  height: 150px;
+  object-fit: cover;
+  border-radius: 4px;
+}
+
+.image-actions {
+    position: absolute;
+  top: 5px;
+  right: 5px;
+  display: flex;
+  gap: 5px;
+}
+
+.image-actions button {
+  background-color: rgba(255, 255, 255, 0.8);
+  border: none;
+  border-radius: 50%;
+  width: 30px;
+  height: 30px;
+  font-size: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.image-order {
+  width: 50px;
+  text-align: center;
+  margin-top: 5px;
+}
+
+/* Styles pour les badges de statut */
+.status-badge {
+  min-width: 100px;
+  text-align: center;
+}
+
+.order-detail-header {
+  background-color: #f8f9fa;
+    padding: 15px;
+  border-radius: 5px;
+  margin-bottom: 20px;
+}
+
+.order-summary-card {
+  height: 100%;
+}
+
+.product-row {
+  display: flex;
+  align-items: center;
+  margin-bottom: 10px;
+  padding-bottom: 10px;
+    border-bottom: 1px solid #eee;
+}
+
+.product-row:last-child {
+  border-bottom: none;
+}
+
+.product-row img {
+  width: 50px;
+  height: 50px;
+    object-fit: cover;
+  border-radius: 4px;
+  margin-right: 10px;
+}
+
+.product-details {
+  flex-grow: 1;
+}
+
+/* Styles pour la page de connexion admin */
+.login-page {
+  height: 100vh;
+  display: flex;
+  align-items: center;
+  background-color: #f5f5f5;
+}
+
+.form-signin {
+  max-width: 400px;
+  padding: 15px;
+}
+
+.form-signin .form-floating:focus-within {
+  z-index: 2;
+}
+
+.form-signin input[type="email"] {
+  margin-bottom: -1px;
+  border-bottom-right-radius: 0;
+  border-bottom-left-radius: 0;
+}
+
+.form-signin input[type="password"] {
+  margin-bottom: 10px;
+  border-top-left-radius: 0;
+  border-top-right-radius: 0;
+}
+
+.admin-header {
+  background-color: #343a40;
+    color: white;
+  padding: 20px;
+  border-radius: 5px 5px 0 0;
+}
+
+.quantity-container {
+  width: 100px;
+}
+
+/* =========================================
+   STYLES ADDITIONNELS POUR LES PAGES FRONTEND
+   ========================================= */
+
+/* Conteneur de prévisualisation d'image de produit */
+.product-image-placeholder {
+  height: 200px;
+}
+
+/* Formulaire inline dans la page compte */
+.inline-form {
+  display: inline-block;
+}
+
+/* Carte centrée avec largeur max */
+.card-centered {
+  max-width: 600px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+/* Miniature de produit dans le panier */
+.cart-product-thumbnail {
+  width: 60px;
+}
+
+/* Miniature de produit dans les commandes */
+.order-product-thumbnail {
+  width: 50px; 
+  height: 50px; 
+  object-fit: cover;
+}
+
+/* Placeholder pour les images produits absentes */
+.product-image-placeholder-small {
+  width: 50px; 
+  height: 50px;
+}
+
+/* Section conditionnelle (affichage selon option) */
+.conditional-section {
+  display: none;
+}
+.conditional-section.active {
+  display: block;
 } 
